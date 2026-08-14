@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Queen's Tug — four hidden castles, one wandering queen</title>
+<meta name="description" content="A four-player strategy game of secret influence. Bid coins in secret to tug a shared queen toward your hidden castle.">
+<meta name="theme-color" content="#090c12">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;900&family=Spectral:wght@300;400;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+
+<!-- ============================ TITLE ============================ -->
+<section id="screen-title" class="screen title-screen">
+  <div class="title-inner">
+    <img class="title-art" src="./assets/logo.webp" alt="Queen's Tug — four hidden castles, one wandering queen, every move is a secret battle">
+    <div class="title-menu">
+      <button class="btn btn-gold" id="btn-new">New game</button>
+      <button class="btn" id="btn-join">Join with a code</button>
+      <button class="btn btn-ghost" id="btn-rules">How to play</button>
+    </div>
+    <p class="title-foot">Four players · 12 × 12 board · 75 coins each</p>
+  </div>
+</section>
+
+<!-- ============================ LOBBY ============================ -->
+<section id="screen-lobby" class="screen">
+  <div class="wrap">
+    <div style="display:flex;align-items:center;gap:14px;margin-bottom:18px">
+      <button class="btn btn-ghost btn-sm" id="btn-back-title">← Back</button>
+      <h1 style="font-size:19px;letter-spacing:.16em">SET THE TABLE</h1>
+    </div>
+
+    <div class="lobby-grid">
+      <div class="panel card">
+        <h3>Seats</h3>
+        <p class="hint" id="seat-summary"></p>
+        <div id="seat-list"></div>
+
+        <h3 style="margin-top:22px">Invitation</h3>
+        <p class="hint">The game number is the board seed. Anyone who starts a game with this code gets the identical board — castles, bonuses and queen start. No hidden state travels in the link.</p>
+        <div style="display:flex;align-items:center;gap:14px;margin-bottom:12px">
+          <span class="game-number" id="lobby-code">QT-000000</span>
+          <button class="btn btn-ghost btn-sm" id="btn-reroll">New board</button>
+        </div>
+        <div class="invite">
+          <input id="invite-url" readonly aria-label="Invitation link">
+          <button class="btn btn-sm" id="btn-copy-invite">Copy</button>
+        </div>
+      </div>
+
+      <div class="panel card">
+        <h3>Playtest settings</h3>
+        <p class="hint">These are the only values the specification allows you to tune before touching the rules.</p>
+
+        <div class="field">
+          <label>Decision timer</label>
+          <div class="seg" id="seg-timer"></div>
+          <p class="sub">Spec baseline is 20 seconds. Compare against 30 before changing anything else.</p>
+        </div>
+
+        <div class="field">
+          <label>Starting coins</label>
+          <div class="seg" id="seg-coins"></div>
+          <p class="sub">Baseline is 75. Replenishment matches this amount and only arrives when all four players are empty.</p>
+        </div>
+
+        <div class="field">
+          <label>Stalemate valve</label>
+          <label style="display:flex;gap:9px;align-items:flex-start;text-transform:none;letter-spacing:0;color:var(--silver-dim);font-family:var(--body);font-size:13.5px">
+            <input type="checkbox" id="chk-valve" style="margin-top:4px;accent-color:var(--gold)">
+            <span>Replenish everyone after three consecutive rounds in which nobody spends a coin.</span>
+          </label>
+          <p class="sub"><b style="color:var(--gold)">Off by default — this is a deviation from the specification.</b> Rule §11 only replenishes when all four players are exhausted, and §26 forbids a time limit, so one player holding coins and refusing to bid can freeze a game permanently. Turn this on only when you are deliberately testing the change.</p>
+        </div>
+
+        <button class="btn btn-gold" id="btn-start" style="width:100%;margin-top:6px">Start the game</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ GAME ============================ -->
+<section id="screen-game" class="screen">
+  <header class="topbar">
+    <span class="mark">QUEEN'S TUG</span>
+    <div class="meta">
+      <div>Round<b id="tb-round">1</b></div>
+      <div>Playing as<b id="tb-seat">You</b></div>
+      <div>Game<b id="tb-game">QT-000000</b></div>
+      <button class="btn btn-ghost btn-sm" id="btn-help">Rules</button>
+      <button class="btn btn-ghost btn-sm" id="btn-quit">Leave</button>
+    </div>
+  </header>
+
+  <div class="play-grid">
+    <!-- board -->
+    <div class="plate board-frame">
+      <div class="board" id="board">
+        <div class="board-cells" id="board-cells"></div>
+        <div class="board-overlay" id="board-overlay"></div>
+        <div class="wall-flash" id="wall-flash"></div>
+      </div>
+    </div>
+
+    <!-- controls -->
+    <aside class="side">
+      <div class="takeover-banner" id="takeover-banner"></div>
+
+      <div class="panel purse">
+        <span class="coin-stack"></span>
+        <div>
+          <div class="amount num" id="purse-amount">75</div>
+          <div class="label" id="purse-alloc">Allocation 1</div>
+        </div>
+        <div class="staked">
+          <div class="amount num" id="purse-staked">0</div>
+          <div class="label">Staked</div>
+        </div>
+      </div>
+
+      <div class="panel timer-row">
+        <div class="timer-ring" id="timer-ring">
+          <svg viewBox="0 0 52 52">
+            <circle class="track" cx="26" cy="26" r="22" fill="none" stroke-width="4"></circle>
+            <circle class="fill" id="timer-fill" cx="26" cy="26" r="22" fill="none" stroke-width="4"></circle>
+          </svg>
+          <span class="digits num" id="timer-digits">20</span>
+        </div>
+        <div>
+          <div class="phase-label" id="phase-label">Plan</div>
+          <div class="phase-sub" id="phase-sub">Place coins around the queen.</div>
+        </div>
+      </div>
+
+      <!-- the compass: the signature control -->
+      <div class="panel compass-wrap">
+        <div class="compass">
+          <button class="arrow-pad up" id="pad-up" style="--dir-color:var(--up)" aria-label="Stake coins upward">
+            <span class="stake num zero">0</span>
+          </button>
+          <button class="arrow-pad left" id="pad-left" style="--dir-color:var(--left)" aria-label="Stake coins left">
+            <span class="stake num zero">0</span>
+          </button>
+          <div class="compass-hub">
+            <span class="hub-total num" id="hub-total">0</span>
+            <span class="hub-label">staked</span>
+          </div>
+          <button class="arrow-pad right" id="pad-right" style="--dir-color:var(--right)" aria-label="Stake coins right">
+            <span class="stake num zero">0</span>
+          </button>
+          <button class="arrow-pad down" id="pad-down" style="--dir-color:var(--down)" aria-label="Stake coins downward">
+            <span class="stake num zero">0</span>
+          </button>
+        </div>
+
+        <div class="stake-controls">
+          <div class="seg" id="seg-step">
+            <button data-step="1" class="is-on">+1</button>
+            <button data-step="5">+5</button>
+            <button data-step="10">+10</button>
+          </div>
+          <button class="btn btn-sm btn-ghost" id="btn-clear">Clear</button>
+        </div>
+        <button class="btn btn-gold" id="btn-lock" style="width:100%;margin-top:9px">Lock bid</button>
+        <p class="hint-line">Click a highlighted cell or an arrow to stake. Shift-click or right-click removes. Arrow keys work too.</p>
+      </div>
+
+      <!-- resolution readout -->
+      <div class="panel resolution" id="resolution">
+        <h4 id="resolution-title" style="font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);margin-bottom:11px">Round</h4>
+        <div class="res-bars" id="res-bars"></div>
+        <div class="res-verdict" id="res-verdict"></div>
+      </div>
+
+      <div class="panel bonus-card" id="bonus-card">
+        <div class="coin-face num" id="bonus-face">20</div>
+        <div class="bonus-what" id="bonus-text"></div>
+      </div>
+
+      <div class="panel rivals">
+        <h4>The other three</h4>
+        <div id="rival-list"></div>
+      </div>
+    </aside>
+  </div>
+</section>
+
+<!-- ============================ REVEAL ============================ -->
+<section id="screen-reveal" class="screen">
+  <header class="topbar">
+    <span class="mark">QUEEN'S TUG</span>
+    <div class="meta">
+      <button class="btn btn-ghost btn-sm" id="btn-share">Share result</button>
+      <button class="btn btn-gold btn-sm" id="btn-again">Play again</button>
+    </div>
+  </header>
+
+  <div class="reveal-grid">
+    <div class="plate board-frame">
+      <div class="board" id="reveal-board">
+        <div class="board-cells" id="reveal-cells"></div>
+        <svg class="path-layer" id="reveal-path"></svg>
+        <div class="board-overlay" id="reveal-overlay"></div>
+      </div>
+      <div class="replay-controls">
+        <button class="btn btn-sm" id="btn-replay">▶ Replay</button>
+        <input type="range" id="replay-slider" min="0" max="1" value="1" aria-label="Scrub the queen's journey">
+        <span class="num" id="replay-step" style="font-size:12px;color:var(--muted);min-width:56px;text-align:right">0 / 0</span>
+      </div>
+    </div>
+
+    <aside class="side">
+      <div class="panel winner-hero">
+        <div class="crown"><svg viewBox="0 0 32 24"><path fill="#f4d491" stroke="#7c5c1e" stroke-width="1" d="M3 21 1 4l8 6 7-9 7 9 8-6-2 17z"/></svg></div>
+        <h2 id="reveal-winner">Winner</h2>
+        <p class="sub" id="reveal-sub"></p>
+        <div class="stat-grid">
+          <div class="stat"><b id="stat-rounds">0</b><span>Rounds</span></div>
+          <div class="stat"><b id="stat-cells">0</b><span>Cells travelled</span></div>
+          <div class="stat"><b id="stat-bonuses">0</b><span>Bonuses taken</span></div>
+          <div class="stat"><b id="stat-allocs">1</b><span>Allocations</span></div>
+        </div>
+      </div>
+
+      <div class="panel card">
+        <h3>Every castle, now public</h3>
+        <p class="hint">Hidden for the whole game. This is the first time anyone sees all four.</p>
+        <div class="legend" id="reveal-legend"></div>
+      </div>
+    </aside>
+  </div>
+</section>
+
+<!-- ============================ HANDOFF CURTAIN ============================ -->
+<div class="curtain" id="curtain">
+  <div>
+    <div class="seat-badge" id="curtain-badge">1</div>
+    <h2 id="curtain-title">Pass the device</h2>
+    <p id="curtain-note"></p>
+    <button class="btn btn-gold" id="curtain-go">Ready</button>
+  </div>
+</div>
+
+<!-- ============================ RULES ============================ -->
+<div class="modal" id="modal-rules">
+  <div class="panel modal-body">
+    <button class="btn btn-ghost btn-sm modal-close" data-close-modal>Close</button>
+    <h2>How to play</h2>
+    <p>Four players. One queen everybody shares. Each of you owns a castle that only you can see. Move the queen onto <em>your</em> castle and you win instantly.</p>
+
+    <h4>Nobody drives the queen</h4>
+    <p>Every round you secretly place coins on the four cells around her. When all four players lock in, the stakes are added up by direction.</p>
+
+    <h4>Opposite stakes cancel</h4>
+    <div class="rule-example">
+      Up <span class="num">3</span>, Down <span class="num">2</span>, Right <span class="num">2</span>, Left <span class="num">0</span>.<br>
+      Up and Down cancel down to Up <span class="num">1</span>. Right still has <span class="num">2</span>.<br>
+      Right is the strongest survivor, so the queen moves <span class="num">2</span> cells right.
+    </div>
+    <p>If two directions survive with equal force, the queen does not move — and every coin is still spent. Spending nothing is always a legal choice.</p>
+
+    <h4>Distance is a maximum, not a promise</h4>
+    <p>A surviving force of 7 moves the queen up to seven cells. If the wall arrives first she stops there and the remaining steps are thrown away.</p>
+
+    <h4>Landing is everything</h4>
+    <p>The queen must <em>finish</em> her move on your castle. Sailing straight over it does nothing. The same is true of your private bonus challenge.</p>
+
+    <h4>Your private bonus</h4>
+    <p>You always have one secret bonus cell worth 10, 20 or 30 coins. Land the queen on it to bank the reward. Every cell the queen travels knocks one coin off the reward, so a distant bonus can rot away to nothing before you ever reach it. When it is claimed or hits zero, a fresh one appears somewhere else.</p>
+
+    <h4>Coins</h4>
+    <p>You start with 75. Coins are spent whether they win, cancel or achieve nothing at all. Everyone is topped up only when <em>all four</em> players have run dry.</p>
+
+    <h4>What you never see</h4>
+    <p>Other castles. Other bonuses. Other balances. Who staked what. The queen's history. After each round you see only the combined totals per direction — never who paid for them. Everything is revealed when someone wins.</p>
+
+    <h4>Controls</h4>
+    <ul>
+      <li>Click a highlighted cell or an arrow to add coins.</li>
+      <li>Shift-click or right-click to take coins back.</li>
+      <li>Arrow keys stake, Enter locks, Backspace clears.</li>
+      <li>Keys 1, 2 and 3 switch between staking 1, 5 and 10 at a time.</li>
+    </ul>
+  </div>
+</div>
+
+<div class="toast-stack" id="toasts"></div>
+
+<script type="module" src="./src/ui.js"></script>
+</body>
+</html>
