@@ -47,13 +47,13 @@ export const DEFAULT_CONFIG = {
   boardWidth: 12,
   boardHeight: 12,
 
-  /** §3 — 75 starting coins per player. */
-  startingCoins: 75,
+  /** Starting coins per player. Tune here — there is no in-game setting. */
+  startingCoins: 50,
 
-  /** §11 — Replenishment amount when all four players are exhausted. */
-  replenishCoins: 75,
+  /** Replenishment amount when all four players are exhausted (§11). */
+  replenishCoins: 50,
 
-  /** §3, §12 — 20 seconds initially; configurable for playtesting. */
+  /** Seconds a player gets to plan each round. Tune here. */
   decisionTimerMs: 20000,
 
   /**
@@ -63,8 +63,11 @@ export const DEFAULT_CONFIG = {
    */
   boundaryMargin: 1,
 
-  /** §3, §10 — Bonus reward values. */
-  bonusRewards: [10, 20, 30],
+  /**
+   * Every bonus stack starts at this value and decays by the queen's actual
+   * travel distance each round (§10.2). One number, not a band.
+   */
+  bonusStartReward: 50,
 
   /** §10.2 — Bonus decays by actual queen movement, clamped at this floor. */
   bonusMinReward: 0,
@@ -117,5 +120,7 @@ export function setPacing(multiplier) {
   return UI_TIMING;
 }
 
-export const SEAT_COLORS = ['#4ea6e8', '#d6484c', '#63b84e', '#c98ce0'];
-export const SEAT_NAMES = ['Player 1', 'Player 2', 'Player 3', 'Player 4'];
+/** Ludo-style seat identity: red, green, blue, yellow. */
+export const SEAT_COLORS = ['#e0453f', '#3faa54', '#3d86e8', '#e8b021'];
+export const SEAT_COLORS_LIGHT = ['#ff8a84', '#7ede8c', '#8dc0ff', '#ffd97a'];
+export const SEAT_NAMES = ['You', 'Player 2', 'Player 3', 'Player 4'];

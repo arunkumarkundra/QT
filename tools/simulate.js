@@ -61,6 +61,9 @@ const roundsList = finished.map((r) => r.rounds);
 const noMove = avg(results.map((r) => r.metrics.noMoveRounds / Math.max(1, r.metrics.rounds)));
 const split = avg(results.map((r) => r.metrics.splitBidDecisions / Math.max(1, r.metrics.bidDecisions)));
 const bonuses = avg(results.map((r) => r.metrics.bonusesCollected));
+const cellsPerRound = avg(results.map((r) => r.metrics.cellsTravelled / Math.max(1, r.metrics.rounds)));
+const wallRate = avg(results.map((r) => r.metrics.wallBlocks / Math.max(1, r.metrics.rounds)));
+const coinsPerBid = avg(results.map((r) => r.metrics.coinsSpent / Math.max(1, r.metrics.bidDecisions)));
 const allocs = avg(results.map((r) => r.allocations));
 
 const pct = (x) => `${(x * 100).toFixed(1)}%`;
@@ -71,6 +74,9 @@ if (!quiet) {
 console.log(`  games completed        ${finished.length}/${games}  (${pct(finished.length / games)})`);
 console.log(`  rounds (mean / median) ${avg(roundsList).toFixed(1)} / ${median(roundsList)}`);
 console.log(`  rounds (min / max)     ${Math.min(...roundsList)} / ${Math.max(...roundsList)}`);
+console.log(`  cells moved / round    ${cellsPerRound.toFixed(2)}`);
+console.log(`  wall slams / round     ${pct(wallRate)}`);
+console.log(`  coins per bid          ${coinsPerBid.toFixed(2)}`);
 console.log(`  no-movement rounds     ${pct(noMove)}`);
 console.log(`  split-bid decisions    ${pct(split)}`);
 console.log(`  bonuses collected/game ${bonuses.toFixed(1)}`);

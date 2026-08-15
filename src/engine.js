@@ -122,7 +122,7 @@ export function generateBonus(state, seat) {
 
   return {
     position: rng.pick(candidates),
-    reward: rng.pick(state.config.bonusRewards),
+    reward: state.config.bonusStartReward,
   };
 }
 
@@ -172,10 +172,26 @@ export function createGame({ seed, config = {}, players = [] } = {}) {
 
     completeQueenPath: [], // authoritative only — never in a PlayerView (§5.3)
     bonusLedger: [], // authoritative only — for the end reveal (§18)
+    /**
+     * Per-round snapshot used to replay the finished game as a public movie
+     * (§18). Authoritative only: it contains every player's bonus position, so
+     * it must never appear in a PlayerView.
+     */
+    roundLog: [],
     lastResolution: null,
     winner: null,
     consecutiveZeroBidRounds: 0,
-    metrics: { rounds: 0, noMoveRounds: 0, splitBidDecisions: 0, bidDecisions: 0, bonusesCollected: 0, replenishments: 0 },
+    metrics: {
+      rounds: 0,
+      noMoveRounds: 0,
+      splitBidDecisions: 0,
+      bidDecisions: 0,
+      bonusesCollected: 0,
+      replenishments: 0,
+      cellsTravelled: 0,
+      wallBlocks: 0,
+      coinsSpent: 0,
+    },
   };
 
   const rng = rngFor(state);
@@ -484,6 +500,7 @@ export function resolveRound(state, { now = Date.now() } = {}) {
     const spent = bidTotal(bid);
     alloc.coinsRemaining -= spent;
     alloc.spentThisAllocation += spent;
+    s.metrics.coinsSpent += spent;
     bids.push(bid);
 
     s.metrics.bidDecisions += 1;
@@ -497,6 +514,15 @@ export function resolveRound(state, { now = Date.now() } = {}) {
   const movement = moveQueen(s, net.direction, net.requestedDistance);
   s.queenPosition = movement.finalPosition;
   s.completeQueenPath.push(...movement.path);
+
+  /**
+   * Snapshot the board as it stood for THIS round: where every bonus sat and
+   * what it was worth before the move resolved. The replay needs this to show
+   * the state players were actually reacting to.
+   */
+  const bonusesAtRoundStart = s.activeBonuses.map((b, seat) =>
+    b ? { seat, position: cell(b.position.r, b.position.c), reward: b.reward } : null
+  );
 
   // 8. Castle landing ends the game immediately.
   const winnerSeat = checkWinner(s, s.queenPosition);
@@ -563,6 +589,8 @@ export function resolveRound(state, { now = Date.now() } = {}) {
 
   s.metrics.rounds += 1;
   if (movement.actualDistance === 0) s.metrics.noMoveRounds += 1;
+  s.metrics.cellsTravelled += movement.actualDistance;
+  if (movement.blockedByBoundary) s.metrics.wallBlocks += 1;
 
   /**
    * §5.1 / §19 — the resolution summary is PUBLIC, but it is aggregate only.
@@ -589,6 +617,19 @@ export function resolveRound(state, { now = Date.now() } = {}) {
     events,
   };
   s.lastResolution = resolution;
+
+  s.roundLog.push({
+    roundNumber: resolution.roundNumber,
+    startPosition,
+    path: movement.path.map((p) => cell(p.r, p.c)),
+    finalPosition: cell(s.queenPosition.r, s.queenPosition.c),
+    direction: net.direction,
+    actualDistance: movement.actualDistance,
+    blockedByBoundary: movement.blockedByBoundary,
+    bonuses: bonusesAtRoundStart,
+    collected: collection ? { seat: collection.seat, position: collection.position, reward: collection.reward } : null,
+    winner: s.winner,
+  });
 
   // 13. Begin the next round unless the game has ended.
   if (s.status === STATUS.PLAYING) {

@@ -23,6 +23,7 @@ const MODULE_ORDER = [
   'src/engine.js',
   'src/playerView.js',
   'src/ai.js',
+  'src/sound.js',
   'src/host.js',
   'src/ui.js',
 ];

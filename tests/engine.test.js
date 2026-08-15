@@ -162,11 +162,18 @@ test('Bonuses never overlap castles, the queen, or each other', () => {
   }
 });
 
-test('Bonus reward is always 10, 20 or 30 at generation', () => {
+test('Every bonus stack starts at the configured value', () => {
   for (let i = 0; i < 100; i++) {
     const s = createGame({ seed: `reward-${i}` });
-    for (const b of s.activeBonuses) assert([10, 20, 30].includes(b.reward), `Bad reward ${b.reward}`);
+    for (const b of s.activeBonuses) {
+      eq(b.reward, s.config.bonusStartReward, `Bad starting reward ${b.reward}`);
+    }
   }
+});
+
+test('The bonus starting value is configurable', () => {
+  const s = createGame({ seed: 'reward-cfg', config: { bonusStartReward: 33 } });
+  for (const b of s.activeBonuses) eq(b.reward, 33);
 });
 
 /* ================================================================== *
@@ -176,9 +183,9 @@ section('Bidding — validation and legality (§8, §12, §21)');
 
 test('Bids cannot exceed available coins', () => {
   const s = newGame('bid-1');
-  const r = validateBid(s, 0, B({ UP: 76 }));
-  assert(!r.ok, 'A 76-coin bid on a 75-coin balance was accepted');
-  assert(validateBid(s, 0, B({ UP: 75 })).ok, 'A 75-coin bid on a 75-coin balance was rejected');
+  const start = s.config.startingCoins;
+  assert(!validateBid(s, 0, B({ UP: start + 1 })).ok, 'An over-budget bid was accepted');
+  assert(validateBid(s, 0, B({ UP: start })).ok, 'A full-balance bid was rejected');
 });
 
 test('A split bid across multiple directions is valid', () => {
@@ -190,7 +197,7 @@ test('A split bid across multiple directions is valid', () => {
 
 test('Split bids are still capped by the total balance', () => {
   const s = newGame('bid-3');
-  assert(!validateBid(s, 0, B({ UP: 40, DOWN: 40 })).ok, '80 coins accepted from a 75-coin balance');
+  assert(!validateBid(s, 0, B({ UP: 40, DOWN: 40 })).ok, '80 coins accepted from a 50-coin balance');
 });
 
 test('A zero bid is valid', () => {
@@ -281,8 +288,8 @@ test('Movement distance equals the winning surviving force', () => {
 test('Coins are spent even when the round produces no movement (§8.2, §11)', () => {
   const s = newGame('spend-1');
   const { state } = playRound(s, [B({ UP: 6 }), B({ DOWN: 6 }), B(), B()]);
-  eq(state.coinAllocationState[0].coinsRemaining, 69);
-  eq(state.coinAllocationState[1].coinsRemaining, 69);
+  eq(state.coinAllocationState[0].coinsRemaining, s.config.startingCoins - 6);
+  eq(state.coinAllocationState[1].coinsRemaining, s.config.startingCoins - 6);
   eq(state.lastResolution.actualDistance, 0, 'Queen should not have moved');
 });
 
@@ -400,7 +407,7 @@ test('Passing over a bonus does not collect it', () => {
   });
   const { state } = playRound(s, [B({ RIGHT: 5 }), B(), B(), B()]);
   eq(state.queenPosition, cell(6, 7));
-  eq(state.coinAllocationState[0].coinsRemaining, 70, 'Flying over a bonus must not pay out');
+  eq(state.coinAllocationState[0].coinsRemaining, s.config.startingCoins - 5, 'Flying over a bonus must not pay out');
 });
 
 test('Landing on a bonus collects it at its pre-decay value', () => {
@@ -411,8 +418,8 @@ test('Landing on a bonus collects it at its pre-decay value', () => {
     bonuses: [[6, 4, 30], [2, 2, 10], [2, 3, 10], [2, 4, 10]],
   });
   const { state } = playRound(s, [B({ RIGHT: 2 }), B(), B(), B()]);
-  // 75 − 2 spent + 30 collected = 103. The reward is NOT reduced by this move.
-  eq(state.coinAllocationState[0].coinsRemaining, 103);
+  // start − 2 spent + 30 collected. The reward is NOT reduced by this move.
+  eq(state.coinAllocationState[0].coinsRemaining, s.config.startingCoins - 2 + 30);
 });
 
 test('Bonus decay equals the actual movement distance', () => {
@@ -476,8 +483,7 @@ test('A bonus may decay to 0 and is then replaced', () => {
   const before = cellKey(s.activeBonuses[0].position);
   const { state } = playRound(s, [B({ RIGHT: 10 }), B(), B(), B()]);
   eq(state.lastResolution.actualDistance, 10);
-  assert(state.activeBonuses[0].reward > 0, 'A replacement bonus must have a fresh reward');
-  assert([10, 20, 30].includes(state.activeBonuses[0].reward), 'Replacement reward must be 10/20/30');
+  eq(state.activeBonuses[0].reward, state.config.bonusStartReward, 'Replacement must reset to the full value');
   assert(cellKey(state.activeBonuses[0].position) !== before, 'Replacement must be at a different cell');
 });
 
@@ -516,7 +522,7 @@ test('Landing on a bonus does not decay that same bonus before collection (§21)
   });
   // Moving 3 cells would decay a 10-reward bonus to 7 — collection must beat decay.
   const { state } = playRound(s, [B({ RIGHT: 3 }), B(), B(), B()]);
-  eq(state.coinAllocationState[0].coinsRemaining, 82, '75 − 3 + 10 = 82');
+  eq(state.coinAllocationState[0].coinsRemaining, s.config.startingCoins - 3 + 10);
   eq(state.activeBonuses[1].reward, 27, 'Other bonuses still decay by 3');
 });
 
@@ -529,7 +535,7 @@ test('A castle win takes precedence over a bonus on the same cell (§21)', () =>
   });
   const { state } = playRound(s, [B({ RIGHT: 2 }), B(), B(), B()]);
   eq(state.winner, 0, 'Castle win must take precedence');
-  eq(state.coinAllocationState[0].coinsRemaining, 73, 'No bonus should have been paid on a winning move');
+  eq(state.coinAllocationState[0].coinsRemaining, s.config.startingCoins - 2, 'No bonus should have been paid on a winning move');
 });
 
 /* ================================================================== *
@@ -554,12 +560,12 @@ test('One player exhausting their allocation alone does not replenish anyone', (
   eq(state.coinAllocationState[0].allocationNumber, 1, 'No new allocation should have been issued');
 });
 
-test('When all four exhaust their allocation, everyone receives a fresh 75', () => {
+test('When all four exhaust their allocation, everyone is replenished', () => {
   let s = newGame('replenish-3');
   s = rig(s, { coins: [4, 4, 4, 4], castles: [[1, 1], [1, 9], [9, 1], [9, 9]] });
   const { state } = playRound(s, [B({ UP: 4 }), B({ DOWN: 4 }), B({ LEFT: 4 }), B({ RIGHT: 4 })]);
   for (let i = 0; i < 4; i++) {
-    eq(state.coinAllocationState[i].coinsRemaining, 75, `Seat ${i} was not replenished`);
+    eq(state.coinAllocationState[i].coinsRemaining, state.config.replenishCoins, `Seat ${i} was not replenished`);
     eq(state.coinAllocationState[i].allocationNumber, 2);
   }
 });
@@ -598,8 +604,8 @@ test('The opt-in stalemate valve breaks the deadlock when deliberately enabled',
   for (let i = 0; i < 3; i++) {
     s = playRound(s, [emptyBid(), emptyBid(), emptyBid(), emptyBid()]).state;
   }
-  eq(s.coinAllocationState[1].coinsRemaining, 75, 'Seat 1 should have been topped up by the valve');
-  eq(s.coinAllocationState[0].coinsRemaining, 95, 'The holdout keeps their unspent coins');
+  eq(s.coinAllocationState[1].coinsRemaining, s.config.replenishCoins, 'Seat 1 should have been topped up by the valve');
+  eq(s.coinAllocationState[0].coinsRemaining, 20 + s.config.replenishCoins, 'The holdout keeps their unspent coins');
 });
 
 test('The stalemate valve is OFF by default, matching the specification', () => {
@@ -683,7 +689,7 @@ test('A PlayerView never carries the seed or RNG cursor', () => {
 test('Opponent coin balances are never visible', () => {
   const s = newGame('view-coins');
   const v = createPlayerView(s, 2);
-  eq(v.you.coinsRemaining, 75);
+  eq(v.you.coinsRemaining, s.config.startingCoins);
   for (const o of v.opponents) assert(!('coinsRemaining' in o), 'Opponent balance exposed');
 });
 

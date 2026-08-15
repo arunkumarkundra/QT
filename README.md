@@ -28,7 +28,7 @@ Pages branch and it works as-is; no build step is required for Pages, because
 
 ```bash
 npm install            # jsdom, for the UI tests only
-npm test               # all four suites — 116 assertions
+npm test               # all three suites — 112 assertions
 npm run test:rules     # the §23 rule suite alone, zero dependencies
 npm run simulate 200   # headless AI games, reports the §27 metrics
 npm run build          # regenerate dist/queens-tug.html from src/
@@ -38,30 +38,27 @@ npm run build          # regenerate dist/queens-tug.html from src/
 
 ## Playing
 
-You are one of four players. Only you know where your castle is. Each round you
-place coins on the four cells around the queen, then lock. Every player does the
-same in secret.
+You are one of four players. Only you can see your castle. Each round, tap the
+glowing cells beside the queen to drop coins on them. Everyone does this in
+secret at the same time.
 
-Opposite directions cancel. The strongest survivor wins and moves the queen that
-many cells — stopping dead at the wall, with the excess discarded. Two equal
-survivors mean the queen does not move, and every coin is still spent.
+Opposite directions cancel. The strongest survivor drags the queen that many
+cells, stopping at the wall. Win by making her **finish** a move on your castle.
 
-You win by making the queen **finish** a move on your castle. Sailing over it
-does nothing.
+**The board is the controller.** There is no bidding panel. Tapping a cell adds
+one coin; tapping the *opposite* cell takes one back off the pile — pulling the
+other way is the natural undo, and it means you can never waste coins paying in
+two opposite directions at once. Arrow keys do the same thing; Enter locks in.
 
-**Controls.** Click a highlighted cell or an arrow pad to stake. Shift-click or
-right-click removes. Arrow keys stake, Enter locks, Backspace clears, and keys
-1/2/3 switch between staking 1, 5 and 10 at a time.
+**Tuning lives in `src/config.js`**, not in a settings screen: `startingCoins`,
+`replenishCoins`, `bonusStartReward`, `decisionTimerMs`, `boardWidth/Height`.
 
-**Modes.** One human against three computer players, or up to four humans
-sharing a device. With multiple humans a handoff curtain covers the screen
-between turns, so nobody sees anyone else's castle or bonus.
+**URL parameters.** `?game=QT-XXXXXX` loads a specific board. `?turbo=0.3`
+speeds up animation and AI pacing for fast playtesting — presentation only, it
+cannot change an outcome.
 
-**URL parameters.** `?game=QT-XXXXXX` seeds a specific board. `?turbo=0.3`
-speeds up animation and AI pacing for fast playtest sessions — presentation
-only, it cannot change an outcome.
-
----
+**Sound** is synthesised with WebAudio at runtime, so there are no audio files
+to ship. The speaker button mutes it and the choice is remembered.
 
 ## Architecture
 
@@ -84,6 +81,7 @@ Human UI    AI
 | `src/engine.js` | Pure rules. No DOM, no network, no timers, no I/O. |
 | `src/playerView.js` | The information boundary. Builds up permitted fields; never deletes from a copy. |
 | `src/ai.js` | Computer player. Its only game input is a PlayerView. |
+| `src/sound.js` | WebAudio synthesis. No audio files. |
 | `src/host.js` | The authoritative "server". Owns state, runs the clock, accepts intent only. |
 | `src/ui.js` | Renders views, collects input. Contains no rules. |
 
@@ -100,15 +98,14 @@ client can send a malformed bid and get it rejected; it cannot send `"move Right
 
 ## Tests
 
-116 assertions across four suites. The rule suite has zero dependencies and
+112 assertions across three suites. The rule suite has zero dependencies and
 covers every bullet in §23, each tagged with its spec section.
 
 | Suite | Covers |
 | --- | --- |
 | `tests/engine.test.js` | 77 rule tests — placement, bidding, cancellation, boundary stopping, castles, bonus decay/collection/replacement, coin economy, the information boundary, determinism, the reveal. |
 | `tests/host.test.js` | 13 tests that the host behaves like a server: filtered reads, rejected outcomes, refused reveals, takeover reporting. |
-| `tests/ui.test.js` | 18 tests booting the built file in jsdom and playing a full game through the real DOM. |
-| `tests/passplay.test.js` | 8 tests that the handoff curtain never puts two players' castles on screen at once. |
+| `tests/ui.test.js` | 21 tests booting the built file in jsdom and playing a full game through the real DOM. |
 
 The UI tests check the *built* file, so a broken bundle fails the suite rather
 than shipping.
@@ -142,35 +139,44 @@ Two responses, both deliberate:
 Four human players can still reach this state. It is worth a rules decision
 before public playtesting.
 
-### 2. Bonuses are currently near-inert
+### 2. The AI was overbidding, and it broke the feel of the game
 
-Across 200 AI games, **0.4 bonuses were collected per game**. The cause is
-structural rather than a tuning error: a bonus must be landed on *exactly*, it
-decays by the queen's full travel distance every round, and four players pulling
-in different directions make precise landings rare. A 30-coin bonus typically
-dies in five or six rounds without anyone getting near it.
+Early builds sent the queen skidding wall to wall: **6.9 cells per round and a
+boundary slam in 45% of rounds**. Three compounding causes:
 
-This is a live question for §27 — "how often players pursue private bonuses
-instead of castles" currently answers "almost never." Candidate levers, all
-configuration rather than rule changes: raise the reward band, slow the decay
-rate, or reduce it to a fraction of distance moved. No change has been made,
-since the spec is explicit about the values.
+- Same-direction bids **stack**. Four seats capped at 20 coins each could put 40+
+  behind one direction. The AI modelled rivals only as opposition, never as
+  accidental allies overshooting its target.
+- Nothing punished hitting the wall, so wasted steps were free.
+- Expecting heavy opposition was self-fulfilling: everyone bid big because
+  everyone expected big bids.
+
+Fixed by capping a single seat's stake to a few coins, widening the "ally" tail
+of the interference model, and penalising leaving the queen on the boundary
+(no castle can sit there anyway). Now **4.7 cells per round and 8% wall slams**,
+with 60% of moves in the 0–3 cell range where the tug-of-war is readable.
+
+This also revived the treasure system. Stacks decay by distance travelled, so at
+seven cells a round they died before anyone could reach one. Collections per game
+roughly doubled, and moving to a single 50-coin starting value (rather than a
+10/20/30 band) gives every stack a life worth chasing.
 
 ---
 
 ## Playtest baseline
 
-200 AI-vs-AI games, 12×12, 75 coins, spec defaults:
+200 AI-vs-AI games, 12×12, 50 coins:
 
 | Metric | Value |
 | --- | --- |
 | Games completed | 200 / 200 |
-| Rounds, mean / median | 27.9 / 22 |
-| Rounds, min / max | 7 / 93 |
-| No-movement rounds | 8.0% |
-| Split-bid decisions | 6.2% |
-| Bonuses collected per game | 0.4 |
-| Coin allocations used | 1.3 |
+| Rounds, mean / median | 24.0 / 21 |
+| Cells moved per round | 4.7 |
+| Wall slams per round | 8.0% |
+| Coins per bid | 2.0 |
+| No-movement rounds | 12.6% |
+| Split-bid decisions | 11.6% |
+| Bonuses collected per game | 0.8 |
 
 Reproduce with `npm run simulate 200`. Vary with `--coins=50`, `--board=10`.
 These are computer players, not humans — treat them as a floor for how the

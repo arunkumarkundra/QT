@@ -1,12 +1,10 @@
 /**
- * QUEEN'S TUG — UI smoke test
+ * QUEEN'S TUG — UI tests
  *
- * Boots dist/queens-tug.html in jsdom and drives it the way a person would:
- * start a game, stake coins, lock, let rounds resolve, and check that the
- * screen actually updates. It also re-runs the information-leak audit against
- * the rendered DOM, because a view can be clean while the markup is not.
+ * Boots the BUILT file in jsdom and plays it the way a person would, so a
+ * broken bundle fails here rather than in someone's browser.
  *
- * Requires jsdom (dev-only):  npm install --no-save jsdom
+ *   npm install --no-save jsdom
  */
 
 import { readFileSync } from 'node:fs';
@@ -14,204 +12,228 @@ import { JSDOM, VirtualConsole } from 'jsdom';
 
 let passed = 0;
 const failures = [];
-function test(name, fn) {
-  return Promise.resolve()
-    .then(fn)
-    .then(() => {
-      passed++;
-      console.log(`  \x1b[32m✓\x1b[0m ${name}`);
-    })
-    .catch((err) => {
-      failures.push({ name, err });
-      console.log(`  \x1b[31m✗ ${name}\x1b[0m\n    ${err.message}`);
-    });
+async function test(name, fn) {
+  try {
+    await fn();
+    passed++;
+    console.log(`  \x1b[32m✓\x1b[0m ${name}`);
+  } catch (err) {
+    failures.push({ name, err });
+    console.log(`  \x1b[31m✗ ${name}\x1b[0m\n    ${err.message}`);
+  }
 }
 const assert = (c, m) => {
   if (!c) throw new Error(m || 'Assertion failed');
 };
+const eq = (a, b, m) => {
+  if (JSON.stringify(a) !== JSON.stringify(b)) {
+    throw new Error(`${m || 'Expected equality'}\n      expected: ${JSON.stringify(b)}\n      actual:   ${JSON.stringify(a)}`);
+  }
+};
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const html = readFileSync(new URL('../dist/queens-tug.html', import.meta.url), 'utf8');
-
 const pageErrors = [];
 const vc = new VirtualConsole();
-vc.on('jsdomError', (e) => pageErrors.push(e));
-vc.on('error', (e) => pageErrors.push(e));
+vc.on('jsdomError', (e) => pageErrors.push(e.message));
 
 const dom = new JSDOM(html, {
   runScripts: 'dangerously',
   pretendToBeVisual: true,
   url: 'https://example.test/queens-tug.html?turbo=0.04',
   virtualConsole: vc,
-  // Stub the handful of APIs jsdom does not implement, BEFORE page scripts run.
   beforeParse(w) {
     w.scrollTo = () => {};
     w.navigator.clipboard = { writeText: async () => {} };
+    // jsdom has no WebAudio; the sound module must degrade silently.
+    w.AudioContext = undefined;
+    w.webkitAudioContext = undefined;
   },
 });
 const { window } = dom;
 const doc = window.document;
 const $ = (s) => doc.querySelector(s);
 const $$ = (s) => [...doc.querySelectorAll(s)];
-const click = (elOrSel) => {
-  const node = typeof elOrSel === 'string' ? $(elOrSel) : elOrSel;
-  assert(node, `Missing element: ${elOrSel}`);
-  node.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+const click = (sel) => {
+  const n = typeof sel === 'string' ? $(sel) : sel;
+  assert(n, `Missing element: ${sel}`);
+  n.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
 };
 
+console.log('\n\x1b[1mUI (jsdom, built bundle)\x1b[0m');
 
-console.log('\n\x1b[1mUI smoke test (jsdom)\x1b[0m');
+await wait(140);
 
-await test('The page boots without a script error', async () => {
-  await wait(120);
-  assert(pageErrors.length === 0, `Page errors: ${pageErrors.map((e) => e.message || e).join('; ')}`);
-  assert($('#screen-title').classList.contains('is-active'), 'Title screen did not open');
+await test('Boots to the title screen with no script error', () => {
+  assert(pageErrors.length === 0, pageErrors.join('; '));
+  assert(!$('#screen-title').hidden, 'Title screen not shown');
+  assert($('#screen-game').hidden, 'Game screen should be hidden');
+  assert($('#screen-result').hidden, 'Result screen should be hidden');
 });
 
-await test('The key art is inlined, not a broken external reference', () => {
+await test('Exactly one screen is ever mounted — the page cannot scroll between them', () => {
+  const visible = $$('.screen').filter((s) => !s.hidden);
+  eq(visible.length, 1, 'More than one screen is mounted at once');
+});
+
+await test('The key art is inlined rather than fetched', () => {
   const src = $('.title-art').getAttribute('src');
-  assert(src.startsWith('data:image/webp;base64,'), 'Logo is not inlined');
-  assert(src.length > 5000, 'Inlined logo looks truncated');
+  assert(src.startsWith('data:image/webp;base64,'), 'Logo not inlined');
 });
 
-await test('New game opens the lobby with a seeded board code', () => {
-  click('#btn-new');
-  assert($('#screen-lobby').classList.contains('is-active'), 'Lobby did not open');
-  assert(/^QT-[A-Z0-9]{6}$/.test($('#lobby-code').textContent), 'Malformed game number');
-  assert($('#invite-url').value.includes('?game=QT-'), 'Invitation URL missing the join token');
-  assert($$('#seat-list .seat-row').length === 4, 'Expected exactly four seats');
+await test('Play goes straight to the board — there is no setup screen', () => {
+  click('#btn-play');
+  assert(!$('#screen-game').hidden, 'Game screen did not open');
+  assert($('#screen-title').hidden, 'Title screen still mounted');
+  assert($$('#board-cells .cell').length === 144, 'Expected a 12×12 board');
 });
 
-await test('The invitation link carries no hidden state (§20)', () => {
-  const url = $('#invite-url').value;
-  const params = new window.URLSearchParams(url.split('?')[1]);
-  assert([...params.keys()].join(',') === 'game', `Unexpected URL params: ${[...params.keys()]}`);
+await test('Before the game starts nothing is revealed and the code is offered', () => {
+  assert(!$('#pregame').hidden, 'Pre-game overlay missing');
+  eq($$('#board-overlay .marker').length, 0, 'Pieces are visible before the game starts');
+  assert(/^QT-[A-Z0-9]{6}$/.test($('#game-code').textContent), 'Malformed game code');
+  assert($('#btn-lock').disabled, 'Lock should be inert before the game starts');
 });
 
-await test('Starting the game renders a 12×12 board and the player’s own castle', async () => {
+await test('Four seats show, one human and three computer players', () => {
+  const chips = $$('#seat-chips .seat-chip');
+  eq(chips.length, 4);
+  eq(chips.filter((c) => c.classList.contains('is-you')).length, 1, 'Exactly one seat is you');
+  const locks = $$('#seat-chips .lock-badge');
+  eq(locks.length, 4, 'Every seat needs a lock indicator');
+});
+
+await test('Starting the game reveals only this player’s own pieces', () => {
   click('#btn-start');
-  await wait(150);
-  assert($('#screen-game').classList.contains('is-active'), 'Game screen did not open');
-  assert($$('#board-cells .cell').length === 144, `Expected 144 cells, got ${$$('#board-cells .cell').length}`);
-  assert($('#board-overlay .castle-mark.mine'), 'Own castle not rendered');
-  assert($('#board-overlay .queen'), 'Queen not rendered');
+  assert($('#pregame').hidden, 'Pre-game overlay did not close');
+  eq($$('#board-overlay .castle-mark').length, 1, 'More than one castle is on the board');
+  assert($$('#board-overlay .bonus-mark').length <= 1, 'More than one treasure is on the board');
+  assert($('#board-overlay .queen'), 'Queen missing');
 });
 
-await test('Exactly one castle is drawn — no opponent castles reach the DOM (§5.3)', () => {
-  assert($$('#board-overlay .castle-mark').length === 1, 'More than one castle is in the markup');
-  assert($$('#board-overlay .bonus-mark').length <= 1, 'More than one bonus is in the markup');
+await test('The cells beside the queen become the controls', () => {
+  const targets = $$('#board-cells .cell.target');
+  assert(targets.length >= 2 && targets.length <= 4, `Expected 2–4 targets, got ${targets.length}`);
+  for (const t of targets) assert(t.dataset.dir, 'A target has no direction');
+  assert($$('#board-cells .cell .dir-hint').length >= 2, 'Direction hints missing');
 });
 
-await test('The four bid targets are marked and clickable', () => {
-  const targets = $$('#board-cells .cell.bid-target');
-  assert(targets.length >= 2 && targets.length <= 4, `Expected 2–4 bid targets, got ${targets.length}`);
-  for (const t of targets) assert(t.dataset.dir, 'A bid target has no direction');
+let firstDir = null;
+
+await test('Clicking a cell drops one coin and shows the stack', () => {
+  const target = $('#board-cells .cell.target');
+  firstDir = target.dataset.dir;
+  click(target);
+  eq($$('#board-cells .cell.staked').length, 1, 'No staked cell after a click');
+  eq($('#board-cells .cell.staked .count').textContent, '1', 'Coin count wrong');
+  assert(/Lock in 1/.test($('#btn-lock').textContent), `Lock label wrong: ${$('#btn-lock').textContent}`);
 });
 
-await test('Clicking a bid target stakes coins and updates the purse', () => {
-  const before = Number($('#purse-amount').textContent);
-  const target = $('#board-cells .cell.bid-target');
+await test('Coins accumulate one per click', () => {
+  const target = $(`#board-cells .cell[data-dir="${firstDir}"]`);
   click(target);
   click(target);
-  assert(Number($('#hub-total').textContent) === 2, 'Hub total did not reach 2');
-  assert(Number($('#purse-staked').textContent) === 2, 'Staked readout did not update');
-  assert(Number($('#purse-amount').textContent) === before, 'Balance should not drop until resolution');
-  assert(target.classList.contains('has-stake'), 'Staked cell not highlighted');
+  eq($('#board-cells .cell.staked .count').textContent, '3');
+  assert(/Lock in 3/.test($('#btn-lock').textContent));
 });
 
-await test('The stake step control changes the increment', () => {
-  const stepBtn = $$('#seg-step button').find((b) => b.dataset.step === '10');
-  click(stepBtn);
-  click($('#board-cells .cell.bid-target'));
-  assert(Number($('#hub-total').textContent) === 12, `Expected 12 staked, got ${$('#hub-total').textContent}`);
+await test('Clicking the opposite cell takes coins back instead of paying both ways', () => {
+  const opp = { UP: 'DOWN', DOWN: 'UP', LEFT: 'RIGHT', RIGHT: 'LEFT' }[firstDir];
+  const oppCell = $(`#board-cells .cell[data-dir="${opp}"]`);
+  if (!oppCell) return; // queen against a wall this game
+  click(oppCell);
+  eq($('#board-cells .cell.staked .count').textContent, '2', 'Opposite click did not remove a coin');
+  eq($$('#board-cells .cell.staked').length, 1, 'Coins were placed in both directions at once');
+  click(oppCell);
+  click(oppCell);
+  eq($$('#board-cells .cell.staked').length, 0, 'Stack did not empty');
+  assert(/Pass this round/.test($('#btn-lock').textContent), 'Empty bid should offer to pass');
 });
 
-await test('Clear resets the placement', () => {
-  click('#btn-clear');
-  assert(Number($('#hub-total').textContent) === 0, 'Clear did not reset the stake');
-  assert($$('#board-cells .cell.has-stake').length === 0, 'A staked highlight survived Clear');
+await test('The purse shows a balance and never a staked total', () => {
+  const purse = $('#purse').textContent;
+  assert(/^\s*\d+\s*$/.test(purse), `Purse should show one number, got "${purse}"`);
+  assert(!/stake/i.test($('#purse').innerHTML), 'Purse mentions staking');
 });
 
-await test('A stake cannot exceed the balance', () => {
-  const stepBtn = $$('#seg-step button').find((b) => b.dataset.step === '10');
-  click(stepBtn);
-  const target = $('#board-cells .cell.bid-target');
-  for (let i = 0; i < 12; i++) click(target); // 120 coins attempted against 75
-  const total = Number($('#hub-total').textContent);
-  assert(total <= 75, `Staked ${total} on a 75-coin balance`);
+await test('Round number and seat identity are not shown during play', () => {
+  const bar = $('#screen-game .bar').textContent;
+  assert(!/round/i.test(bar), 'Round counter is on screen');
+    assert(!/playing as/i.test($('#screen-game').textContent), 'Seat identity banner is on screen');
 });
 
-await test('Locking resolves the round and advances the counter', async () => {
-  click('#btn-clear');
-  click($$('#seg-step button').find((b) => b.dataset.step === '1'));
-  click($('#board-cells .cell.bid-target'));
-  const round = Number($('#tb-round').textContent);
+await test('There is no side panel — the layout is a single column', () => {
+  assert(!$('.side'), 'A side panel survived');
+  assert(!$('.compass'), 'The bidding compass survived');
+  assert(!$$('#screen-game button').some((b) => /\+5|\+10/.test(b.textContent)), 'Coin step buttons survived');
+});
+
+await test('Locking in resolves the round without revealing per-direction totals', async () => {
+  const target = $('#board-cells .cell.target');
+  if (target) click(target);
   click('#btn-lock');
-  await wait(900); // turbo pacing: AI think time + presentation window
-  const after = Number($('#tb-round').textContent);
-  assert(after === round + 1 || $('#screen-reveal').classList.contains('is-active'), `Round did not advance (${round} → ${after})`);
+  await wait(1400);
+  const status = $('#status').textContent;
+  assert(!/\d/.test(status) || /holds her ground/.test(status), `Status leaks numbers: "${status}"`);
+  assert(!$('#res-bars'), 'The old totals readout survived');
 });
 
-await test('The resolution readout shows aggregate totals only', async () => {
-  const bars = $$('#res-bars .res-row');
-  assert(bars.length === 4, `Expected four direction rows, got ${bars.length}`);
-  const markup = $('#resolution').innerHTML;
-  assert(!/Player\s*[234]/.test(markup), 'The resolution names individual contributors');
-});
-
-await test('Opponent panel shows control mode but never coins, castles or bids', () => {
-  const markup = $('#rival-list').innerHTML;
-  assert($$('#rival-list .rival').length === 3, 'Expected three opponents');
-  assert(!/coin/i.test(markup), 'Opponent balances leaked into the panel');
-  assert(!/castle/i.test(markup), 'Opponent castles leaked into the panel');
-});
-
-await test('Keyboard staking works', async () => {
-  await wait(300);
-  if ($('#screen-reveal').classList.contains('is-active')) return; // game already ended
-  const before = Number($('#hub-total').textContent);
-  doc.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
-  doc.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
-  const after = Number($('#hub-total').textContent);
-  assert(after >= before, 'Keyboard staking had no effect');
-});
-
-await test('A full game reaches the reveal screen with all four castles', async () => {
-  // Drive rounds until the game ends.
-  const deadline = Date.now() + 90000;
+await test('A full game reaches the result screen', async () => {
+  const deadline = Date.now() + 60000;
   while (Date.now() < deadline) {
-    if ($('#screen-reveal').classList.contains('is-active')) break;
+    if (!$('#screen-result').hidden) break;
     const lock = $('#btn-lock');
-    if (!lock.disabled) {
-      const target = $('#board-cells .cell.bid-target');
-      if (target) click(target);
+    if (lock && !lock.disabled) {
+      const c = $('#board-cells .cell.target');
+      if (c) click(c);
       click(lock);
     }
-    await wait(25);
+    await wait(12);
   }
-  assert($('#screen-reveal').classList.contains('is-active'), 'The game never reached the reveal screen');
-  assert($$('#reveal-legend .legend-row').length === 4, 'Reveal does not list all four castles');
-  assert($$('#reveal-overlay .castle-mark').length === 4, 'Reveal board does not draw all four castles');
-  assert($('#reveal-path polyline'), 'The queen path was not drawn');
-  const pts = $('#reveal-path polyline').getAttribute('points').trim().split(/\s+/);
-  assert(pts.length >= 2, 'The revealed path has no length');
-  assert(/wins$/.test($('#reveal-winner').textContent), 'Winner headline missing');
+  assert(!$('#screen-result').hidden, 'Never reached the result screen');
+  assert($('#screen-game').hidden, 'Game screen still mounted');
 });
 
-await test('The replay scrubber moves the queen along the revealed path', () => {
+await test('The winner is shown as a coloured avatar with grammatical text', () => {
+  const text = $('#winner-text').textContent;
+  assert(/(You win|Player \d wins)$/.test(text), `Ungrammatical winner text: "${text}"`);
+  assert($('#winner-avatar svg'), 'Winner avatar missing');
+  const colour = $('#winner-line').style.getPropertyValue('--seat');
+  assert(colour, 'Winner avatar has no seat colour');
+});
+
+await test('The replay shows all four castles, owner-ringed treasure and a trail', () => {
+  eq($$('#replay-overlay .castle-mark').length, 4, 'Not all castles revealed');
+  assert($$('#replay-overlay .bonus-ring').length > 0, 'No owner rings on historical treasure');
+  assert($('#replay-path polyline'), 'No trail drawn');
+  assert($('#replay-queen'), 'Replay queen missing');
+});
+
+await test('The replay is scrubbed by round, not by single step', () => {
   const slider = $('#replay-slider');
-  const queen = $('#reveal-queen');
+  const rounds = Number($('#stat-rounds').textContent);
+  eq(Number(slider.max), rounds, 'Slider should have one stop per round');
   slider.value = '0';
   slider.dispatchEvent(new window.Event('input', { bubbles: true }));
-  const atStart = queen.style.getPropertyValue('--r') + ',' + queen.style.getPropertyValue('--c');
-  slider.value = slider.max;
+  eq($('#replay-label').textContent, `0 / ${rounds}`);
+  const at = () => {
+    const q = $('#replay-queen');
+    return `${q.style.getPropertyValue('--r')},${q.style.getPropertyValue('--c')}`;
+  };
+  const atStart = at();
+  slider.value = String(rounds);
   slider.dispatchEvent(new window.Event('input', { bubbles: true }));
-  const atEnd = queen.style.getPropertyValue('--r') + ',' + queen.style.getPropertyValue('--c');
-  assert(atStart !== atEnd, 'The scrubber did not move the queen');
+  eq($('#replay-label').textContent, `${rounds} / ${rounds}`, 'Label did not follow the scrubber');
+  // A one-round game can legitimately start and end on the same cell.
+  if (rounds > 2) assert(at() !== atStart, 'Scrubbing did not move the queen');
 });
 
-await test('No script errors accumulated across the whole session', () => {
-  assert(pageErrors.length === 0, `Page errors: ${pageErrors.map((e) => e.message || e).join('; ')}`);
+await test('The "every castle now public" panel is gone — the board says it', () => {
+  assert(!/now public/i.test($('#screen-result').textContent), 'Redundant castle list survived');
+});
+
+await test('No script errors across the whole session', () => {
+  assert(pageErrors.length === 0, pageErrors.join('; '));
 });
 
 dom.window.close();

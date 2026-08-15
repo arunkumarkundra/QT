@@ -60,8 +60,12 @@ function positionScore(pos, view, personality) {
   const dc = abs(pos.c - castle.c);
   let score = -(dr + dc) * 30;
 
-  if (dr === 0) score += 150 - dc * 5;
-  if (dc === 0) score += 150 - dr * 5;
+  // Being adjacent to the castle is worth a great deal: it puts a one-cell,
+  // one-coin kill on the table next round.
+  if (dr + dc === 1) score += 220;
+
+  if (dr === 0) score += 95 - dc * 5;
+  if (dc === 0) score += 95 - dr * 5;
 
   const bonus = view.you.activeBonus;
   if (bonus && bonus.reward > 0) {
@@ -76,10 +80,17 @@ function positionScore(pos, view, personality) {
     }
   }
 
-  // Corners are dead ends: the queen loses two of its four escape routes.
+  /**
+   * The wall is a bad place to leave the queen. No castle can ever sit on the
+   * outer ring (§4.1), an edge costs the queen an escape route, and a corner
+   * costs two. Without this the AI happily slams the queen into the boundary
+   * because the wasted steps cost it nothing.
+   */
   const edgeR = pos.r === 0 || pos.r === view.board.height - 1;
   const edgeC = pos.c === 0 || pos.c === view.board.width - 1;
-  if (edgeR && edgeC) score -= 60;
+  if (edgeR) score -= 70;
+  if (edgeC) score -= 70;
+  if (edgeR && edgeC) score -= 80;
 
   return score;
 }
@@ -115,18 +126,25 @@ function interferenceModel(view, dir, personality) {
 
   let base = pressure?.quiet
     ? [
-        { push: -2, p: 0.15 },
-        { push: 0, p: 0.35 },
-        { push: 2, p: 0.30 },
-        { push: 5, p: 0.20 },
+        { push: -2, p: 0.18 },
+        { push: 0, p: 0.40 },
+        { push: 1, p: 0.27 },
+        { push: 3, p: 0.15 },
       ]
     : [
-        { push: -4, p: 0.10 }, // someone happens to want the same direction
-        { push: -1, p: 0.16 },
-        { push: 1, p: 0.24 },
-        { push: 4, p: 0.24 },
-        { push: 8, p: 0.16 },
-        { push: 13, p: 0.10 },
+        /**
+         * Negative values are ALLIES, not opposition: bids in the same
+         * direction stack, so a rival wanting the same thing overshoots our
+         * target. With three rivals the ally tail has to be wide, otherwise
+         * the AI bids for a 3-cell move and gets a 12-cell skid.
+         */
+        { push: -8, p: 0.08 },
+        { push: -4, p: 0.13 },
+        { push: -1, p: 0.19 },
+        { push: 0, p: 0.20 },
+        { push: 2, p: 0.20 },
+        { push: 4, p: 0.13 },
+        { push: 7, p: 0.07 },
       ];
 
   // Public signal (§5.1): last round's surviving forces. If the table pushed
@@ -135,7 +153,7 @@ function interferenceModel(view, dir, personality) {
   if (last && last.surviving) {
     const against = last.surviving[OPPOSITE[dir]] || 0;
     const along = last.surviving[dir] || 0;
-    const drift = (against - along) * 0.3;
+    const drift = (against - along) * 0.22;
     base = base.map((b) => ({ push: Math.round(b.push + drift), p: b.p }));
   }
   return base;
@@ -165,11 +183,22 @@ export function decideBid(view, { rngSeed } = {}) {
    * nothing and a cheap uncontested move is close to free.
    */
   const scarcity = 1 + (1 - balance / Math.max(1, view.config.startingCoins)) * 2.2;
-  const coinCost = pressure?.passive ? 1.5 : 9 * personality.thrift * scarcity;
+  const coinCost = pressure?.passive ? 2.5 : 15 * personality.thrift * scarcity;
 
+  /**
+   * Hard ceiling on a single round's stake. Earlier versions allowed up to 20,
+   * which four seats turned into nets of 8–15 and sent the queen skidding
+   * wall to wall. Small stakes make the tug-of-war legible.
+   */
+  /**
+   * Hard ceiling on one round's stake. Four seats bidding the same direction
+   * STACK, so a ceiling of 5 still produced 20-cell skids. Keeping each seat
+   * to a few coins is what makes the tug-of-war readable — and it keeps bonus
+   * stacks alive long enough to matter, since they decay by distance moved.
+   */
   const maxStake = pressure?.passive
-    ? Math.min(balance, 14)
-    : Math.min(balance, Math.max(3, Math.floor(balance * 0.55)), 20);
+    ? Math.min(balance, 4)
+    : Math.min(balance, Math.max(2, Math.floor(balance * 0.10)), 3);
 
   let best = { dir: null, amount: 0, ev: holdScore };
 
@@ -228,7 +257,7 @@ export function decideBid(view, { rngSeed } = {}) {
       const worse = positionScore(after, view, personality) < holdScore - 20;
       const spare = balance - best.amount;
       if (worse && spare > 2) {
-        bid[counter] = Math.min(spare, Math.max(1, Math.round(last.actualDistance * 0.8)));
+        bid[counter] = Math.min(spare, 4, Math.max(1, Math.round(last.actualDistance * 0.5)));
       }
     }
   }

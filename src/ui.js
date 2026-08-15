@@ -1,19 +1,22 @@
 /**
- * QUEEN'S TUG — User interface (Spec §16, §19)
+ * QUEEN'S TUG — User interface
  *
- * This layer renders state and collects input. It contains NO game rules.
- * Every fact it draws comes from `host.getView(seat)` — a PlayerView — so the
- * browser physically does not hold another player's castle, coins, bonus or
- * bid. Search this file for `castles`, `activeBonuses` or `currentRoundBids`:
- * there are no hits, because the UI has no access to them.
+ * Renders state, collects intent. No game rules live here. Every fact drawn on
+ * screen comes from `host.getView(seat)` — a PlayerView — so the browser never
+ * holds another player's castle, treasure, balance or bid.
+ *
+ * Interaction model: the BOARD is the controller. There is no bidding panel.
+ * Clicking a cell beside the queen drops one coin on it. Clicking the opposite
+ * cell takes a coin back off the pile first, which is why there is no separate
+ * "remove" control — pulling the other way is the natural undo.
  */
 
-import { createHost, TURN_MODE } from './host.js';
-import { DIRECTIONS, SEAT_COLORS, UI_TIMING, CONTROL_MODE, setPacing } from './config.js';
-import { aiLabel } from './ai.js';
+import { createHost } from './host.js';
+import { DIRECTIONS, OPPOSITE, SEAT_COLORS, UI_TIMING, CONTROL_MODE, setPacing } from './config.js';
+import { sound } from './sound.js';
 
 /* ------------------------------------------------------------------ *
- * Small helpers
+ * Helpers
  * ------------------------------------------------------------------ */
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -24,162 +27,115 @@ const el = (tag, cls, html) => {
   if (html != null) n.innerHTML = html;
   return n;
 };
-const DIR_LABEL = { UP: 'Up', DOWN: 'Down', LEFT: 'Left', RIGHT: 'Right' };
-const DIR_GLYPH = { UP: '↑', DOWN: '↓', LEFT: '←', RIGHT: '→' };
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const dirVar = (d) => `var(--${d.toLowerCase()})`;
-
-const GLYPH = {
-  queen: `<svg viewBox="0 0 32 40" aria-hidden="true"><defs><linearGradient id="qg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fffaf0"/><stop offset="1" stop-color="#c9a961"/></linearGradient></defs><path fill="url(#qg)" stroke="#6b5320" stroke-width="1" d="M6 9 4 3l6 4 6-6 6 6 6-4-2 6a4 4 0 0 1-1 3l-2 8h-14l-2-8a4 4 0 0 1-1-3z"/><rect x="9" y="21" width="14" height="3" rx="1" fill="url(#qg)" stroke="#6b5320" stroke-width=".8"/><path fill="url(#qg)" stroke="#6b5320" stroke-width=".8" d="M11 24h10l2 9H9z"/><rect x="6" y="33" width="20" height="5" rx="1.6" fill="url(#qg)" stroke="#6b5320" stroke-width=".8"/></svg>`,
-  castle: (color) =>
-    `<svg viewBox="0 0 32 32" aria-hidden="true"><path fill="${color}" stroke="rgba(0,0,0,.55)" stroke-width="1" d="M4 12V6h4v3h3V6h4v3h3V6h4v6l2 2v14H2V14z"/><rect x="13" y="20" width="6" height="8" fill="rgba(0,0,0,.45)"/></svg>`,
-  crown: `<svg viewBox="0 0 32 24" aria-hidden="true"><path fill="#f4d491" stroke="#7c5c1e" stroke-width="1" d="M3 21 1 4l8 6 7-9 7 9 8-6-2 17z"/></svg>`,
-};
-
-function toast(msg, kind = '') {
-  const stack = $('#toasts');
-  const t = el('div', `toast ${kind}`, msg);
-  stack.appendChild(t);
-  setTimeout(() => {
-    t.style.transition = 'opacity .3s';
-    t.style.opacity = '0';
-    setTimeout(() => t.remove(), 320);
-  }, 2600);
-}
-
-function showScreen(id) {
-  $$('.screen').forEach((s) => s.classList.toggle('is-active', s.id === id));
-  // Guarded: not every embedding environment implements scrollTo.
-  try {
-    window.scrollTo(0, 0);
-  } catch {
-    /* no-op */
-  }
-}
+const DIR_WORD = { UP: 'up', DOWN: 'down', LEFT: 'left', RIGHT: 'right' };
 
 /* ------------------------------------------------------------------ *
- * Application state (presentation only — never game rules)
+ * Artwork — inline SVG so there are no image requests
+ * ------------------------------------------------------------------ */
+
+const ART = {
+  queen: `<svg viewBox="0 0 40 46" aria-hidden="true">
+    <defs>
+      <linearGradient id="qgold" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#fffbf0"/><stop offset=".45" stop-color="#f2d492"/><stop offset="1" stop-color="#b98d33"/>
+      </linearGradient>
+    </defs>
+    <g stroke="#5c4416" stroke-width="1.1" stroke-linejoin="round">
+      <path fill="url(#qgold)" d="M6 13 3 4l7.5 5L15 1.5 20 8l5-6.5L29.5 9 37 4l-3 9a5 5 0 0 1-1.4 2.4l-1.6 6.6H9L7.4 15.4A5 5 0 0 1 6 13z"/>
+      <circle cx="3" cy="4" r="2.2" fill="#fff6dd"/><circle cx="37" cy="4" r="2.2" fill="#fff6dd"/>
+      <circle cx="20" cy="6.5" r="2.4" fill="#fff6dd"/>
+      <rect x="8" y="21" width="24" height="3.6" rx="1.4" fill="url(#qgold)"/>
+      <path fill="url(#qgold)" d="M11 25h18l2.6 11H8.4z"/>
+      <rect x="5" y="36" width="30" height="6" rx="2.2" fill="url(#qgold)"/>
+    </g>
+  </svg>`,
+
+  castle: (color) => `<svg viewBox="0 0 36 34" aria-hidden="true">
+    <g stroke="rgba(0,0,0,.55)" stroke-width="1.1" stroke-linejoin="round">
+      <path fill="${color}" d="M3 13V5h4.5v3.2H12V5h4.5v3.2H21V5h4.5v3.2H30V5h3v8l2 2.4V32H1V15.4z"/>
+      <path fill="rgba(0,0,0,.34)" stroke="none" d="M14.5 22h7v10h-7z"/>
+      <path fill="rgba(255,255,255,.22)" stroke="none" d="M3 13h30l2 2.4H1z"/>
+    </g>
+  </svg>`,
+
+  /** A stack of coins. The number is drawn over it by the caller. */
+  treasure: `<svg viewBox="0 0 36 36" aria-hidden="true">
+    <defs>
+      <linearGradient id="tg" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#ffeeb8"/><stop offset=".5" stop-color="#e0b040"/><stop offset="1" stop-color="#8a6420"/>
+      </linearGradient>
+    </defs>
+    <g stroke="#5c4416" stroke-width="1">
+      <ellipse cx="18" cy="27" rx="13" ry="5" fill="url(#tg)"/>
+      <ellipse cx="18" cy="22.5" rx="11" ry="4.3" fill="url(#tg)"/>
+      <ellipse cx="18" cy="18" rx="9" ry="3.6" fill="url(#tg)"/>
+      <ellipse cx="18" cy="13.5" rx="6.5" ry="2.8" fill="url(#tg)"/>
+    </g>
+  </svg>`,
+
+  human: `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <circle cx="12" cy="7.6" r="4.1"/>
+    <path d="M12 13.6c-4.3 0-7.6 2.4-7.6 5.5V22h15.2v-2.9c0-3.1-3.3-5.5-7.6-5.5z"/>
+  </svg>`,
+
+  bot: `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <rect x="4" y="8" width="16" height="12" rx="3.4"/>
+    <rect x="10.9" y="2.4" width="2.2" height="4" rx="1.1"/>
+    <circle cx="12" cy="2.4" r="1.7"/>
+    <circle cx="9" cy="13.4" r="1.9" fill="#0b0f17"/>
+    <circle cx="15" cy="13.4" r="1.9" fill="#0b0f17"/>
+    <rect x="9.4" y="16.8" width="5.2" height="1.5" rx=".75" fill="#0b0f17"/>
+  </svg>`,
+
+  lockClosed: `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <path d="M7 10V7.2a5 5 0 0 1 10 0V10h.6A1.4 1.4 0 0 1 19 11.4v8.2A1.4 1.4 0 0 1 17.6 21H6.4A1.4 1.4 0 0 1 5 19.6v-8.2A1.4 1.4 0 0 1 6.4 10zm2.3 0h5.4V7.2a2.7 2.7 0 0 0-5.4 0z"/>
+  </svg>`,
+
+  lockOpen: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true">
+    <rect x="5" y="10.5" width="14" height="10.5" rx="1.8"/>
+    <path d="M8.2 10.5V7.4a3.8 3.8 0 0 1 7.3-1.4"/>
+  </svg>`,
+
+  chevron: (rot) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate(${rot}deg)" aria-hidden="true"><path d="M5 15l7-7 7 7"/></svg>`,
+
+  soundOn: `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 9.5h3.2L12 5.4v13.2L7.2 14.5H4z"/><path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" d="M15.4 9a4.4 4.4 0 0 1 0 6M18 6.6a8 8 0 0 1 0 10.8"/></svg>`,
+  soundOff: `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 9.5h3.2L12 5.4v13.2L7.2 14.5H4z"/><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="m16 9.5 4.5 5M20.5 9.5 16 14.5"/></svg>`,
+  help: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.4 9.3a2.7 2.7 0 0 1 5.2.9c0 1.8-2.6 2.3-2.6 4" stroke-linecap="round"/><circle cx="12" cy="17.4" r="1.05" fill="currentColor" stroke="none"/></svg>`,
+  exit: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M14 4h4.5A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5H14M10 8l-4 4 4 4M6 12h9"/></svg>`,
+  crown: `<svg viewBox="0 0 32 22" aria-hidden="true"><path fill="currentColor" d="M3 20 1 3l8.5 6.2L16 1l6.5 8.2L31 3l-2 17z"/></svg>`,
+};
+
+/* ------------------------------------------------------------------ *
+ * App state (presentation only)
  * ------------------------------------------------------------------ */
 
 const app = {
   host: null,
-  /** Which seat this device is currently showing. */
-  viewSeat: 0,
-  /** Coins added per tap. */
-  stakeStep: 1,
-  turnMode: TURN_MODE.SIMULTANEOUS,
-  humanSeats: [0],
+  seat: 0,
+  code: '',
   animating: false,
+  started: false,
   unsub: null,
   replayTimer: null,
-  setup: {
-    mode: 'solo',
-    timerMs: 20000,
-    startingCoins: 75,
-    seatNames: ['You', 'Player 2', 'Player 3', 'Player 4'],
-    seatHuman: [true, false, false, false],
-    seed: '',
-    stalemateValve: false,
-  },
+  lastBalance: null,
+  lastTick: -1,
+  reveal: null,
 };
 
-/* ================================================================== *
- * TITLE + LOBBY
- * ================================================================== */
-
-function initTitle() {
-  $('#btn-new').onclick = () => {
-    buildLobby();
-    showScreen('screen-lobby');
-  };
-  $('#btn-rules').onclick = () => openModal('modal-rules');
-  $('#btn-join').onclick = () => {
-    const code = prompt('Enter a game number or invitation code:');
-    if (!code) return;
-    app.setup.seed = code.trim().toUpperCase();
-    buildLobby();
-    showScreen('screen-lobby');
-    toast(`Board seeded from ${app.setup.seed}. Everyone using this code gets the same board.`, 'gold');
-  };
+function toast(msg, kind = '') {
+  const t = el('div', `toast ${kind}`, msg);
+  $('#toasts').appendChild(t);
+  setTimeout(() => {
+    t.style.transition = 'opacity .3s';
+    t.style.opacity = '0';
+    setTimeout(() => t.remove(), 320);
+  }, 2500);
 }
 
-function buildLobby() {
-  const s = app.setup;
-  if (!s.seed) s.seed = randomCode();
-
-  $('#lobby-code').textContent = s.seed;
-  $('#invite-url').value = inviteUrl(s.seed);
-
-  // Seats
-  const list = $('#seat-list');
-  list.innerHTML = '';
-  for (let i = 0; i < 4; i++) {
-    const row = el('div', 'seat-row');
-    const pip = el('span', 'seat-pip');
-    pip.style.color = SEAT_COLORS[i];
-    pip.style.background = SEAT_COLORS[i];
-
-    const name = el('input', 'seat-name');
-    name.value = s.seatNames[i];
-    name.setAttribute('aria-label', `Name for seat ${i + 1}`);
-    name.oninput = () => (s.seatNames[i] = name.value || `Player ${i + 1}`);
-
-    const toggle = el('div', 'toggle');
-    const human = el('button', s.seatHuman[i] ? 'is-on' : '', 'Human');
-    const ai = el('button', !s.seatHuman[i] ? 'is-on' : '', 'Computer');
-    human.onclick = () => {
-      s.seatHuman[i] = true;
-      buildLobby();
-    };
-    ai.onclick = () => {
-      s.seatHuman[i] = false;
-      buildLobby();
-    };
-    toggle.append(human, ai);
-
-    row.append(pip, name, toggle);
-    list.appendChild(row);
-  }
-
-  const humans = s.seatHuman.filter(Boolean).length;
-  $('#seat-summary').textContent =
-    humans === 1
-      ? 'One human, three computer players. The computer sees exactly what you see.'
-      : `${humans} humans sharing this device, ${4 - humans} computer ${4 - humans === 1 ? 'player' : 'players'}. Each human plans in private behind a handoff screen.`;
-
-  segControl('#seg-timer', [15000, 20000, 30000], s.timerMs, (v) => (s.timerMs = v), (v) => `${v / 1000}s`);
-  segControl('#seg-coins', [50, 75, 100], s.startingCoins, (v) => (s.startingCoins = v), (v) => `${v}`);
-
-  $('#chk-valve').checked = s.stalemateValve;
-  $('#chk-valve').onchange = (e) => (s.stalemateValve = e.target.checked);
-
-  $('#btn-start').onclick = beginGame;
-  $('#btn-back-title').onclick = () => showScreen('screen-title');
-  $('#btn-copy-invite').onclick = async () => {
-    try {
-      await navigator.clipboard.writeText($('#invite-url').value);
-      toast('Invitation link copied.', 'gold');
-    } catch {
-      $('#invite-url').select();
-      toast('Press ⌘C or Ctrl+C to copy.');
-    }
-  };
-  $('#btn-reroll').onclick = () => {
-    s.seed = randomCode();
-    buildLobby();
-  };
-}
-
-function segControl(sel, values, current, onPick, fmt) {
-  const box = $(sel);
-  box.innerHTML = '';
-  for (const v of values) {
-    const b = el('button', v === current ? 'is-on' : '', fmt(v));
-    b.onclick = () => {
-      onPick(v);
-      buildLobby();
-    };
-    box.appendChild(b);
-  }
+function showScreen(id) {
+  for (const s of $$('.screen')) s.hidden = s.id !== id;
 }
 
 function randomCode() {
@@ -189,53 +145,100 @@ function randomCode() {
   return `QT-${out}`;
 }
 
-/** §20 — the join token carries no hidden state, only the board seed. */
-function inviteUrl(code) {
-  const base = location.origin + location.pathname;
-  return `${base}?game=${encodeURIComponent(code)}`;
+const inviteUrl = (code) => `${location.origin}${location.pathname}?game=${encodeURIComponent(code)}`;
+
+/* ------------------------------------------------------------------ *
+ * Board construction
+ * ------------------------------------------------------------------ */
+
+function buildGrid(cellsEl, boardEl, width, height, margin) {
+  boardEl.style.setProperty('--cols', width);
+  boardEl.style.setProperty('--rows', height);
+  cellsEl.innerHTML = '';
+  for (let r = 0; r < height; r++) {
+    for (let c = 0; c < width; c++) {
+      const cell = el('div', 'cell');
+      cell.dataset.r = r;
+      cell.dataset.c = c;
+      if (margin != null && (r < margin || c < margin || r >= height - margin || c >= width - margin)) {
+        cell.classList.add('edge-band');
+      }
+      cellsEl.appendChild(cell);
+    }
+  }
 }
 
-/* ================================================================== *
- * GAME START
- * ================================================================== */
+/** The queen element is created ONCE and never rebuilt, so a re-render can
+ *  never restart or duplicate a movement animation. */
+function ensureQueen(overlay) {
+  let q = $('#queen', overlay);
+  if (!q) {
+    q = el('div', 'marker queen');
+    q.id = 'queen';
+    q.innerHTML = `<div class="queen-glow"></div>${ART.queen}`;
+    overlay.appendChild(q);
+  }
+  return q;
+}
 
-function beginGame() {
-  const s = app.setup;
-  app.humanSeats = [0, 1, 2, 3].filter((i) => s.seatHuman[i]);
-  if (app.humanSeats.length === 0) app.humanSeats = [0];
-  app.turnMode = app.humanSeats.length > 1 ? TURN_MODE.SEQUENTIAL : TURN_MODE.SIMULTANEOUS;
-  app.viewSeat = app.humanSeats[0];
+function placeMarker(node, pos) {
+  node.style.setProperty('--r', pos.r);
+  node.style.setProperty('--c', pos.c);
+}
+
+/* ------------------------------------------------------------------ *
+ * Game setup
+ * ------------------------------------------------------------------ */
+
+function openGame(code) {
+  app.code = code || randomCode();
+  app.started = false;
+  app.animating = false;
+  app.lastBalance = null;
 
   if (app.host) app.host.dispose();
   if (app.unsub) app.unsub();
 
   app.host = createHost({
-    seed: s.seed,
-    turnMode: app.turnMode,
-    config: {
-      decisionTimerMs: s.timerMs,
-      startingCoins: s.startingCoins,
-      replenishCoins: s.startingCoins,
-      stalemateReplenishRounds: s.stalemateValve ? 3 : null,
-    },
+    seed: app.code,
     seats: [0, 1, 2, 3].map((i) => ({
       playerId: `seat-${i}`,
-      displayName: s.seatNames[i],
-      controlMode: s.seatHuman[i] ? CONTROL_MODE.HUMAN : CONTROL_MODE.AI,
+      displayName: i === 0 ? 'You' : `Player ${i + 1}`,
+      controlMode: i === 0 ? CONTROL_MODE.HUMAN : CONTROL_MODE.AI,
     })),
   });
-
   app.unsub = app.host.subscribe(onHostEvent);
-  buildBoard();
-  showScreen('screen-game');
-  app.host.start();
+  app.seat = 0;
 
-  if (app.turnMode === TURN_MODE.SEQUENTIAL) {
-    openCurtain(app.humanSeats[0], true);
-  } else {
-    render();
-  }
+  const view = app.host.getView(app.seat);
+  buildGrid($('#board-cells'), $('#board'), view.board.width, view.board.height, view.board.boundaryMargin);
+  $('#board-overlay').innerHTML = '';
+  $('#path-layer').innerHTML = '';
+
+  $('#game-code').textContent = app.code;
+  $('#pregame').hidden = false;
+  $('#purse-value').textContent = view.config.startingCoins;
+  $('#btn-lock').disabled = true;
+  $('#status').innerHTML = '';
+
+  renderSeatChips();
+  renderTimer();
+  showScreen('screen-game');
 }
+
+function beginPlay() {
+  sound.unlock();
+  sound.play('press');
+  $('#pregame').hidden = true;
+  app.started = true;
+  app.host.start();
+  sound.play('roundStart');
+  render();
+}
+
+/* ------------------------------------------------------------------ *
+ * Host events
+ * ------------------------------------------------------------------ */
 
 function onHostEvent(evt) {
   switch (evt.type) {
@@ -244,21 +247,14 @@ function onHostEvent(evt) {
       break;
     case 'round-open':
       app.animating = false;
-      $('#resolution').classList.remove('is-open');
-      if (app.turnMode === TURN_MODE.SEQUENTIAL) {
-        const first = app.host.getActiveSeat();
-        if (first !== null) openCurtain(first);
-      }
+      sound.play('roundStart');
       render();
       break;
-    case 'active-seat':
-      if (app.turnMode === TURN_MODE.SEQUENTIAL && evt.seat !== null && !app.animating) {
-        openCurtain(evt.seat);
-      }
+    case 'seat-locked':
+      if (evt.seat !== app.seat) sound.play('rivalLock');
       render();
       break;
     case 'finished':
-      setTimeout(showReveal, UI_TIMING.resolutionHoldMs + 900);
       break;
     case 'tick':
       renderTimer();
@@ -268,676 +264,614 @@ function onHostEvent(evt) {
   }
 }
 
-/* ================================================================== *
- * BOARD
- * ================================================================== */
-
-function buildBoard() {
-  const view = app.host.getView(app.viewSeat);
-  const board = $('#board');
-  board.style.setProperty('--cols', view.board.width);
-  board.style.setProperty('--rows', view.board.height);
-
-  const cells = $('#board-cells');
-  cells.innerHTML = '';
-  const m = view.board.boundaryMargin;
-  for (let r = 0; r < view.board.height; r++) {
-    for (let c = 0; c < view.board.width; c++) {
-      const cell = el('div', 'cell');
-      cell.dataset.r = r;
-      cell.dataset.c = c;
-      // The outer ring where no castle or bonus may ever sit (§4.1).
-      if (r < m || c < m || r >= view.board.height - m || c >= view.board.width - m) {
-        cell.classList.add('edge-band');
-      }
-      cells.appendChild(cell);
-    }
-  }
-  cells.onclick = onBoardClick;
-  cells.oncontextmenu = (e) => {
-    e.preventDefault();
-    onBoardClick(e, true);
-  };
-}
-
-function cellAt(r, c) {
-  return $(`#board-cells .cell[data-r="${r}"][data-c="${c}"]`);
-}
-
-function onBoardClick(e, remove = false) {
-  const cell = e.target.closest('.cell');
-  if (!cell || !cell.classList.contains('bid-target')) return;
-  adjustStake(cell.dataset.dir, remove || e.shiftKey ? -app.stakeStep : app.stakeStep);
-}
-
-/* ================================================================== *
- * RENDER
- * ================================================================== */
+/* ------------------------------------------------------------------ *
+ * Rendering
+ * ------------------------------------------------------------------ */
 
 function render() {
   if (!app.host) return;
-  const view = app.host.getView(app.viewSeat);
-
-  renderTopbar(view);
+  const view = app.host.getView(app.seat);
+  renderSeatChips(view);
   renderMarkers(view);
-  renderBidTargets(view);
-  renderCompass(view);
+  renderTargets(view);
   renderPurse(view);
-  renderRivals(view);
-  renderBonusCard(view);
+  renderLock(view);
+  renderStatus(view);
   renderTimer();
-  renderPhase(view);
 }
 
-function renderTopbar(view) {
-  $('#tb-round').textContent = view.roundNumber;
-  $('#tb-game').textContent = view.gameId;
-  $('#tb-seat').textContent = view.you.displayName;
-  $('#tb-seat').style.color = SEAT_COLORS[view.you.seat];
+function renderSeatChips(view) {
+  const summary = app.host.getPublicSummary();
+  const strip = $('#seat-chips');
+  strip.innerHTML = '';
+  for (const seat of summary.seats) {
+    const chip = el('div', 'seat-chip');
+    chip.style.setProperty('--seat', SEAT_COLORS[seat.seat]);
+    if (seat.seat === app.seat) chip.classList.add('is-you');
+    if (app.started && seat.locked) chip.classList.add('locked');
+    if (app.started && !seat.locked && seat.controlMode === CONTROL_MODE.AI) chip.classList.add('thinking');
+
+    const avatar = el('span', 'avatar', seat.controlMode === CONTROL_MODE.HUMAN ? ART.human : ART.bot);
+    chip.appendChild(avatar);
+    chip.appendChild(el('span', 'who', seat.displayName));
+    chip.appendChild(
+      el('span', 'lock-badge', app.started && seat.locked ? ART.lockClosed : ART.lockOpen)
+    );
+    chip.title = `${seat.displayName} — ${seat.controlMode === CONTROL_MODE.HUMAN ? 'human' : 'computer'}${
+      app.started ? (seat.locked ? ', locked in' : ', still deciding') : ''
+    }`;
+    strip.appendChild(chip);
+  }
 }
 
 function renderMarkers(view) {
-  const layer = $('#board-overlay');
-  layer.innerHTML = '';
+  const overlay = $('#board-overlay');
+  // Rebuild everything EXCEPT the queen, which must persist across renders.
+  for (const node of $$('.castle-mark, .bonus-mark', overlay)) node.remove();
 
-  // Your castle — and only yours (§5.2, §19).
-  const castle = el('div', 'marker castle-mark mine', GLYPH.castle(SEAT_COLORS[view.you.seat]));
-  castle.style.setProperty('--r', view.you.castlePosition.r);
-  castle.style.setProperty('--c', view.you.castlePosition.c);
-  castle.title = 'Your castle — hidden from everyone else';
-  layer.appendChild(castle);
+  const castle = el('div', 'marker castle-mark mine', ART.castle(SEAT_COLORS[view.you.seat]));
+  castle.style.color = SEAT_COLORS[view.you.seat];
+  placeMarker(castle, view.you.castlePosition);
+  castle.title = 'Your castle — nobody else can see it';
+  overlay.appendChild(castle);
 
-  // Your private bonus.
-  if (view.you.activeBonus) {
+  if (view.you.activeBonus && view.you.activeBonus.reward > 0) {
     const b = view.you.activeBonus;
-    const mark = el('div', 'marker bonus-mark');
-    const coin = el('div', `coin${b.reward === 0 ? ' spent' : ''}`, String(b.reward));
-    mark.appendChild(coin);
-    mark.style.setProperty('--r', b.position.r);
-    mark.style.setProperty('--c', b.position.c);
-    mark.title = `Your private bonus — land here for ${b.reward} coins`;
-    layer.appendChild(mark);
+    const mark = el('div', 'bonus-mark');
+    mark.classList.add('marker');
+    if (b.reward <= 12) mark.classList.add('fading');
+    mark.innerHTML = `<div class="bonus-pile"><div class="glow"></div>${ART.treasure}<span class="value num">${b.reward}</span></div>`;
+    placeMarker(mark, b.position);
+    mark.title = 'Your treasure — land exactly here to claim it';
+    overlay.appendChild(mark);
   }
 
-  // The queen.
-  const queen = el('div', 'marker queen');
-  queen.id = 'queen';
-  queen.innerHTML = `<div class="queen-halo"></div>${GLYPH.queen}`;
-  queen.style.setProperty('--r', view.queenPosition.r);
-  queen.style.setProperty('--c', view.queenPosition.c);
-  layer.appendChild(queen);
+  const queen = ensureQueen(overlay);
+  if (!app.animating) placeMarker(queen, view.queenPosition);
 }
 
-function renderBidTargets(view) {
-  $$('#board-cells .cell').forEach((c) => {
-    c.classList.remove('bid-target', 'has-stake');
-    c.style.removeProperty('--dir-color');
-    delete c.dataset.dir;
-    const s = c.querySelector('.cell-stake');
-    if (s) s.remove();
-  });
+function renderTargets(view) {
+  for (const cell of $$('#board-cells .cell')) {
+    cell.classList.remove('target', 'staked');
+    cell.style.removeProperty('--dir');
+    delete cell.dataset.dir;
+    cell.innerHTML = '';
+  }
+  if (!app.started) return;
 
-  const planning = canPlan(view);
+  const canPlan = planningAllowed(view);
   for (const d of DIRECTIONS) {
-    const target = view.adjacent[d];
-    if (!target) continue;
-    const cell = cellAt(target.r, target.c);
+    const t = view.adjacent[d];
+    if (!t) continue;
+    const cell = $(`#board-cells .cell[data-r="${t.r}"][data-c="${t.c}"]`);
     if (!cell) continue;
-    cell.style.setProperty('--dir-color', dirVar(d));
+    cell.style.setProperty('--dir', dirVar(d));
     cell.dataset.dir = d;
-    if (planning) cell.classList.add('bid-target');
 
     const staked = view.you.currentBid[d] || 0;
+    if (canPlan) cell.classList.add('target');
+
     if (staked > 0) {
-      cell.classList.add('has-stake');
-      cell.appendChild(el('div', 'cell-stake', String(staked)));
+      cell.classList.add('staked');
+      const stack = el('div', 'coin-stack');
+      stack.appendChild(el('span', 'disc'));
+      stack.appendChild(el('span', 'count num', String(staked)));
+      cell.appendChild(stack);
+    } else if (canPlan) {
+      const rot = { UP: 0, RIGHT: 90, DOWN: 180, LEFT: 270 }[d];
+      cell.appendChild(el('div', 'dir-hint', ART.chevron(rot)));
     }
   }
-}
-
-function renderCompass(view) {
-  const planning = canPlan(view);
-  for (const d of DIRECTIONS) {
-    const pad = $(`#pad-${d.toLowerCase()}`);
-    const staked = view.you.currentBid[d] || 0;
-    const available = !!view.adjacent[d];
-    pad.disabled = !planning || !available;
-    pad.classList.toggle('staked', staked > 0);
-    pad.title = available
-      ? `${DIR_LABEL[d]} — ${staked} coin${staked === 1 ? '' : 's'} staked`
-      : `No cell ${DIR_LABEL[d].toLowerCase()} of the queen — the board ends here`;
-    const stake = pad.querySelector('.stake');
-    stake.textContent = available ? staked : '—';
-    stake.classList.toggle('zero', staked === 0);
-  }
-  $('#hub-total').textContent = view.you.currentBidTotal;
-  $('#btn-clear').disabled = !planning || view.you.currentBidTotal === 0;
-  $('#btn-lock').disabled = !planning;
-  $('#btn-lock').textContent = view.you.locked ? 'Locked' : 'Lock bid';
 }
 
 function renderPurse(view) {
-  $('#purse-amount').textContent = view.you.coinsRemaining;
-  $('#purse-staked').textContent = view.you.currentBidTotal;
-  $('#purse-alloc').textContent = `Allocation ${view.you.allocationNumber}`;
+  const purse = $('#purse');
+  const value = $('#purse-value');
+  const balance = view.you.coinsRemaining;
+  if (app.lastBalance !== null && balance !== app.lastBalance) {
+    purse.classList.remove('spending', 'gaining');
+    void purse.offsetWidth;
+    purse.classList.add(balance < app.lastBalance ? 'spending' : 'gaining');
+  }
+  app.lastBalance = balance;
+  value.textContent = balance;
 }
 
-function renderRivals(view) {
-  const box = $('#rival-list');
-  box.innerHTML = '';
-  for (const o of view.opponents) {
-    const row = el('div', 'rival');
-    const pip = el('span', 'seat-pip');
-    pip.style.color = SEAT_COLORS[o.seat];
-    pip.style.background = SEAT_COLORS[o.seat];
-    row.appendChild(pip);
-    row.appendChild(el('span', 'who', o.displayName));
-    if (o.controlMode === CONTROL_MODE.AI) {
-      row.appendChild(el('span', 'tag ai', o.takeoverReason ? 'Away · AI' : aiLabel(o.seat)));
-    } else {
-      row.appendChild(el('span', 'tag', 'Human'));
-    }
-    row.appendChild(el('span', `lock-state${o.locked ? ' locked' : ''}`, o.locked ? '● locked' : '○ planning'));
-    box.appendChild(row);
-  }
-
-  // §13 — takeover must be explicit.
-  const away = view.opponents.filter((o) => o.takeoverReason);
-  const banner = $('#takeover-banner');
-  banner.classList.toggle('is-open', away.length > 0);
-  if (away.length) {
-    banner.textContent =
-      away.map((o) => o.displayName).join(', ') +
-      (away.length === 1 ? ' is away — the computer is playing for them.' : ' are away — the computer is playing for them.');
-  }
-}
-
-function renderBonusCard(view) {
-  const b = view.you.activeBonus;
-  const card = $('#bonus-card');
-  if (!b) {
-    card.style.display = 'none';
-    return;
-  }
-  card.style.display = 'flex';
-  const face = $('#bonus-face');
-  face.textContent = b.reward;
-  face.classList.toggle('fading', b.reward <= 5);
-  $('#bonus-text').innerHTML =
-    b.reward > 0
-      ? `Land the queen exactly on <b>row ${b.position.r}, col ${b.position.c}</b> to claim <b>${b.reward}</b> coins. Passing over it collects nothing. The reward drops by one for every cell the queen travels.`
-      : `This challenge has decayed to nothing. A new one arrives next round.`;
-}
-
-function renderPhase(view) {
-  const label = $('#phase-label');
-  const sub = $('#phase-sub');
-
-  if (app.animating) {
-    label.textContent = 'Resolving';
-    sub.textContent = 'Opposing stakes cancel, then the strongest survivor pulls.';
+function renderLock(view) {
+  const btn = $('#btn-lock');
+  if (!app.started) {
+    btn.disabled = true;
+    btn.textContent = 'Lock in';
     return;
   }
   if (view.you.locked) {
-    label.textContent = 'Locked';
-    const waiting = view.opponents.filter((o) => !o.locked).length;
-    sub.textContent = waiting ? `Waiting on ${waiting} more ${waiting === 1 ? 'player' : 'players'}.` : 'Resolving now.';
+    btn.disabled = true;
+    btn.textContent = 'Locked in';
     return;
   }
-  label.textContent = 'Plan';
-  sub.textContent =
-    app.turnMode === TURN_MODE.SEQUENTIAL
-      ? `${view.you.displayName} — place your coins, then lock.`
-      : 'Place coins on the cells around the queen, then lock.';
+  btn.disabled = !planningAllowed(view);
+  const staked = view.you.currentBidTotal;
+  btn.textContent = staked > 0 ? `Lock in ${staked}` : 'Pass this round';
+}
+
+function renderStatus(view) {
+  const status = $('#status');
+  if (!app.started || app.animating) return;
+
+  if (view.you.locked) {
+    const waiting = view.opponents.filter((o) => !o.locked).length;
+    status.innerHTML = waiting
+      ? `Waiting for <b>${waiting}</b> more…`
+      : 'Resolving…';
+    return;
+  }
+  if (view.you.coinsRemaining === 0) {
+    status.innerHTML = 'You are out of coins. Everyone refills once all four are empty.';
+    return;
+  }
+  status.innerHTML = 'Tap the glowing cells to pull the queen your way.';
 }
 
 function renderTimer() {
   if (!app.host) return;
-  const view = app.host.getView(app.viewSeat);
-  const ring = $('#timer-ring');
-  const CIRC = 2 * Math.PI * 22;
+  const view = app.host.getView(app.seat);
+  const ring = $('#timer');
+  const CIRC = 2 * Math.PI * 18;
 
-  let remain = 0;
-  let frac = 0;
-  if (app.animating || app.host.isPresenting()) {
-    remain = Math.ceil((view.timerDeadline - app.host.presentingUntil()) / 1000);
-    frac = 1;
-  } else if (view.timerDeadline) {
+  let remain = view.config.decisionTimerMs / 1000;
+  let frac = 1;
+
+  if (app.started && !app.animating && !app.host.isPresenting() && view.timerDeadline) {
     remain = Math.max(0, (view.timerDeadline - Date.now()) / 1000);
     frac = Math.max(0, Math.min(1, remain / (view.config.decisionTimerMs / 1000)));
-  } else {
-    // Paused between turns in pass-and-play — show a full, calm ring.
-    remain = view.config.decisionTimerMs / 1000;
-    frac = 1;
   }
-  $('#timer-digits').textContent = Math.ceil(remain);
+
+  const secs = Math.ceil(remain);
+  $('#timer-digits').textContent = secs;
   $('#timer-fill').style.strokeDasharray = String(CIRC);
   $('#timer-fill').style.strokeDashoffset = String(CIRC * (1 - frac));
-  ring.classList.toggle('urgent', remain <= 5 && !app.animating && !view.you.locked);
+
+  const urgent = app.started && !app.animating && secs <= 5 && !view.you.locked && frac < 1;
+  ring.classList.toggle('urgent', urgent);
+  if (urgent && secs !== app.lastTick && secs > 0) {
+    app.lastTick = secs;
+    sound.play('tick');
+  }
+  if (!urgent) app.lastTick = -1;
 }
 
-function canPlan(view) {
-  if (app.animating || app.host.isPresenting()) return false;
-  if (view.status !== 'PLAYING') return false;
-  if (view.you.locked) return false;
-  if (app.turnMode === TURN_MODE.SEQUENTIAL && app.host.getActiveSeat() !== view.you.seat) return false;
-  return true;
+function planningAllowed(view) {
+  return (
+    app.started &&
+    !app.animating &&
+    !app.host.isPresenting() &&
+    view.status === 'PLAYING' &&
+    !view.you.locked
+  );
 }
 
-/* ================================================================== *
- * BIDDING INPUT — submits intent to the host, never an outcome
- * ================================================================== */
+/* ------------------------------------------------------------------ *
+ * Bidding — the board IS the control
+ * ------------------------------------------------------------------ */
 
-function adjustStake(dir, delta) {
-  const view = app.host.getView(app.viewSeat);
-  if (!canPlan(view)) return;
+function onBoardClick(e) {
+  const cell = e.target.closest('.cell');
+  if (!cell || !cell.dataset.dir) return;
+  stake(cell.dataset.dir);
+}
 
-  const next = { ...view.you.currentBid };
-  next[dir] = Math.max(0, (next[dir] || 0) + delta);
+/**
+ * Drop a coin toward `dir`. If coins are already committed the OTHER way, the
+ * click takes one of those back instead. Nobody ever wants to pay to pull in
+ * two opposite directions at once, so this reads as a natural undo.
+ */
+function stake(dir) {
+  const view = app.host.getView(app.seat);
+  if (!planningAllowed(view)) return;
 
-  const total = DIRECTIONS.reduce((s, d) => s + next[d], 0);
-  if (total > view.you.coinsRemaining) {
-    // Clamp to the balance rather than bouncing the whole placement.
-    next[dir] -= total - view.you.coinsRemaining;
-    if (next[dir] < 0) next[dir] = 0;
-    toast(`You only hold ${view.you.coinsRemaining} coins.`, 'bad');
+  const bid = { ...view.you.currentBid };
+  const opposite = OPPOSITE[dir];
+  let removing = false;
+
+  if ((bid[opposite] || 0) > 0) {
+    bid[opposite] -= 1;
+    removing = true;
+  } else {
+    if (view.you.currentBidTotal >= view.you.coinsRemaining) {
+      sound.play('deny');
+      toast('No coins left to place.', 'bad');
+      return;
+    }
+    bid[dir] = (bid[dir] || 0) + 1;
   }
 
-  const r = app.host.stageBid(app.viewSeat, next);
-  if (!r.ok && r.error) toast(r.error, 'bad');
-  render();
-}
-
-function clearStake() {
-  const r = app.host.stageBid(app.viewSeat, { UP: 0, DOWN: 0, LEFT: 0, RIGHT: 0 });
-  if (!r.ok && r.error) toast(r.error, 'bad');
+  const r = app.host.stageBid(app.seat, bid);
+  if (!r.ok) {
+    sound.play('deny');
+    if (r.error) toast(r.error, 'bad');
+    return;
+  }
+  sound.play(removing ? 'coinRemove' : 'coinAdd', bid[dir] || 0);
   render();
 }
 
 function lockIn() {
-  const view = app.host.getView(app.viewSeat);
-  if (!canPlan(view)) return;
-  const r = app.host.lock(app.viewSeat);
+  const view = app.host.getView(app.seat);
+  if (!planningAllowed(view)) return;
+  const r = app.host.lock(app.seat);
   if (!r.ok) {
+    sound.play('deny');
     toast(r.error, 'bad');
     return;
   }
+  sound.play('lock');
   render();
 }
 
-/* ================================================================== *
- * RESOLUTION ANIMATION (§19 — aggregate only, no contributors named)
- * ================================================================== */
+/* ------------------------------------------------------------------ *
+ * Resolution — aggregate direction only, never the numbers
+ * ------------------------------------------------------------------ */
 
 async function playResolution() {
-  app.animating = true;
   const res = app.host.getLastResolution();
-  const view = app.host.getView(app.viewSeat);
   if (!res) return;
+  app.animating = true;
 
-  const panel = $('#resolution');
-  panel.classList.add('is-open');
-  $('#resolution-title').textContent = `Round ${res.roundNumber}`;
-  renderPhase(view);
-  $$('#board-cells .cell').forEach((c) => c.classList.remove('bid-target'));
+  const view = app.host.getView(app.seat);
+  const status = $('#status');
 
-  const max = Math.max(1, ...DIRECTIONS.map((d) => res.totals[d]));
-  const bars = $('#res-bars');
-  bars.innerHTML = '';
-  const rows = {};
-  for (const d of DIRECTIONS) {
-    const row = el('div', 'res-row');
-    row.style.setProperty('--dir-color', dirVar(d));
-    row.innerHTML = `
-      <span class="glyph">${DIR_GLYPH[d]}</span>
-      <span class="bar-track"><span class="bar-fill" style="width:${(res.totals[d] / max) * 100}%"></span></span>
-      <span class="val">${res.totals[d]}</span>`;
-    bars.appendChild(row);
-    rows[d] = row;
-  }
-  $('#res-verdict').innerHTML = '<span class="small">Opposing stakes cancel…</span>';
+  // Clear the staked coins from the board now that they are spent.
+  renderTargets({ ...view, you: { ...view.you, currentBid: { UP: 0, DOWN: 0, LEFT: 0, RIGHT: 0 } } });
+  renderPurse(view);
+  renderSeatChips(view);
 
-  await wait(650);
-
-  // Show the cancellation collapsing each opposed pair down to its survivor.
-  for (const d of DIRECTIONS) {
-    const surviving = res.surviving[d];
-    const row = rows[d];
-    row.querySelector('.bar-fill').style.width = `${(surviving / max) * 100}%`;
-    row.querySelector('.val').textContent = surviving;
-    row.classList.toggle('cancelled', surviving === 0 && res.totals[d] > 0);
-  }
-
-  await wait(UI_TIMING.cancelAnimMs);
-
-  // Verdict.
   if (res.tie) {
-    const reason =
-      Object.values(res.totals).every((v) => v === 0)
-        ? 'Nobody spent a coin.'
-        : 'Two directions survived with equal force, so the queen holds her ground. Every coin committed is still spent.';
-    $('#res-verdict').innerHTML = `The queen does not move.<span class="small">${reason}</span>`;
+    sound.play(res.actualDistance === 0 && Object.values(res.totals).every((v) => v === 0) ? 'noMove' : 'cancel');
+    status.innerHTML = `<span class="verdict">The queen holds her ground</span>`;
+    await wait(UI_TIMING.cancelAnimMs + 500);
   } else {
-    const d = res.direction;
-    let note = `${res.actualDistance} cell${res.actualDistance === 1 ? '' : 's'}.`;
-    if (res.blockedByBoundary) {
-      const lost = res.requestedDistance - res.actualDistance;
-      note = `Stopped at the wall after ${res.actualDistance}. ${lost} step${lost === 1 ? '' : 's'} discarded.`;
-    }
-    $('#res-verdict').innerHTML =
-      `<span style="color:${dirVar(d)}">${DIR_GLYPH[d]} ${DIR_LABEL[d]}</span> survives with ${res.requestedDistance}` +
-      `<span class="small">${note}</span>`;
-    await animateQueen(res);
+    sound.play('cancel');
+    status.innerHTML = `<span class="verdict">The queen is pulled <b>${DIR_WORD[res.direction]}</b></span>`;
+    await wait(UI_TIMING.cancelAnimMs);
+    await walkQueen(res);
   }
 
-  // Private outcome, shown only to the seat it belongs to.
   if (view.lastResolution?.yourBonusCollected) {
-    toast(`Bonus claimed — ${view.lastResolution.yourBonusCollected.reward} coins.`, 'gold');
+    const claimed = $('.bonus-mark', $('#board-overlay'));
+    if (claimed) claimed.classList.add('claimed');
+    sound.play('bonus');
+    toast(`Treasure claimed — ${view.lastResolution.yourBonusCollected.reward} coins`, 'gold');
+    await wait(600);
   }
 
   await wait(UI_TIMING.resolutionHoldMs);
+
+  const after = app.host.getView(app.seat);
+  if (after.status === 'FINISHED') {
+    app.animating = false;
+    sound.play('victory');
+    await wait(700);
+    showResult();
+    return;
+  }
+  app.animating = false;
+  status.innerHTML = '';
   render();
 }
 
-function animateQueen(res) {
+/** Slow, deliberate, one cell at a time. */
+function walkQueen(res) {
   return new Promise((resolve) => {
-    const queen = $('#queen');
-    if (!queen || !res.path.length) return resolve();
-    const stepMs = Math.max(70, UI_TIMING.travelMsPerCell - res.path.length * 4);
-    queen.style.setProperty('--step-ms', `${stepMs}ms`);
-    queen.classList.add('is-moving');
+    const queen = ensureQueen($('#board-overlay'));
+    if (!res.path.length) return resolve();
 
+    const perStep = Math.max(90, UI_TIMING.travelMsPerCell - res.path.length * 8);
     let i = 0;
+
     const step = () => {
       if (i >= res.path.length) {
-        queen.classList.remove('is-moving');
-        if (res.blockedByBoundary) flashWall(res.direction);
+        queen.classList.remove('stepping');
+        if (res.blockedByBoundary) {
+          sound.play('wall');
+          flashWall(res.direction);
+        }
         return resolve();
       }
-      const p = res.path[i++];
-      queen.style.setProperty('--r', p.r);
-      queen.style.setProperty('--c', p.c);
-      setTimeout(step, stepMs);
+      const p = res.path[i];
+      placeMarker(queen, p);
+      queen.classList.remove('stepping');
+      void queen.offsetWidth;
+      queen.classList.add('stepping');
+      sound.play('step', i);
+      i++;
+      setTimeout(step, perStep);
     };
-    setTimeout(step, 90);
+    setTimeout(step, 160);
   });
 }
 
 function flashWall(dir) {
   const flash = $('#wall-flash');
-  const thick = '9%';
-  Object.assign(flash.style, { top: '', bottom: '', left: '', right: '', width: '', height: '' });
-  if (dir === 'UP') Object.assign(flash.style, { top: 0, left: 0, right: 0, height: thick, '--flash-dir': '180deg' });
-  if (dir === 'DOWN') Object.assign(flash.style, { bottom: 0, left: 0, right: 0, height: thick, '--flash-dir': '0deg' });
-  if (dir === 'LEFT') Object.assign(flash.style, { left: 0, top: 0, bottom: 0, width: thick, '--flash-dir': '90deg' });
-  if (dir === 'RIGHT') Object.assign(flash.style, { right: 0, top: 0, bottom: 0, width: thick, '--flash-dir': '270deg' });
+  const thick = '10%';
+  flash.style.cssText = '';
+  const grad = (deg) => `linear-gradient(${deg}, rgba(255,205,110,.9), transparent)`;
+  if (dir === 'UP') Object.assign(flash.style, { top: 0, left: 0, right: 0, height: thick, background: grad('180deg') });
+  if (dir === 'DOWN') Object.assign(flash.style, { bottom: 0, left: 0, right: 0, height: thick, background: grad('0deg') });
+  if (dir === 'LEFT') Object.assign(flash.style, { left: 0, top: 0, bottom: 0, width: thick, background: grad('90deg') });
+  if (dir === 'RIGHT') Object.assign(flash.style, { right: 0, top: 0, bottom: 0, width: thick, background: grad('270deg') });
   flash.classList.remove('fire');
   void flash.offsetWidth;
   flash.classList.add('fire');
 }
 
-const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+/* ------------------------------------------------------------------ *
+ * Result + replay movie
+ * ------------------------------------------------------------------ */
 
-/* ================================================================== *
- * HANDOFF CURTAIN — keeps pass-and-play honest
- * ================================================================== */
-
-function openCurtain(seat, first = false) {
-  const summary = app.host.getPublicSummary();
-  const who = summary.seats[seat];
-  const curtain = $('#curtain');
-  const badge = $('#curtain-badge');
-  badge.textContent = seat + 1;
-  badge.style.background = SEAT_COLORS[seat];
-  badge.style.color = '#0d1016';
-  $('#curtain-title').textContent = first ? `${who.displayName}, you go first` : `Pass the device to ${who.displayName}`;
-  $('#curtain-note').textContent = first
-    ? 'Only your castle and your bonus will be shown. Nobody else can see them.'
-    : 'Look away until the device is handed over — the next screen shows a private castle and bonus.';
-  $('#curtain-go').textContent = `I am ${who.displayName}`;
-  $('#curtain-go').onclick = () => {
-    // The seat may have moved on while the curtain was up (a timer expiry, or
-    // the round resolving). Always defer to the host's current active seat.
-    const active = app.host.getActiveSeat();
-    const target = active === null ? seat : active;
-    curtain.classList.remove('is-open');
-    app.viewSeat = target;
-    // Only now does this player's decision timer start — handoff time is not
-    // thinking time.
-    app.host.beginTurn(target);
-    buildBoard();
-    render();
-  };
-  curtain.classList.add('is-open');
-}
-
-/* ================================================================== *
- * REVEAL (§18)
- * ================================================================== */
-
-function showReveal() {
+function showResult() {
   const reveal = app.host.getReveal();
-  showScreen('screen-reveal');
+  app.reveal = reveal;
+  showScreen('screen-result');
 
-  $('#reveal-winner').textContent = `${reveal.winnerName} wins`;
-  $('#reveal-sub').textContent = `The queen came to rest on their castle at row ${
-    reveal.castles[reveal.winner].r
-  }, column ${reveal.castles[reveal.winner].c}.`;
+  const seat = reveal.winner;
+  const winnerSeat = reveal.players[seat];
+  const line = $('#winner-line');
+  line.style.setProperty('--seat', SEAT_COLORS[seat]);
+  $('#winner-avatar').innerHTML = winnerSeat.controlMode === CONTROL_MODE.HUMAN ? ART.human : ART.bot;
+  $('#winner-text').textContent = seat === app.seat ? 'You win' : `${winnerSeat.displayName} wins`;
 
   $('#stat-rounds').textContent = reveal.roundsPlayed;
   $('#stat-cells').textContent = reveal.completeQueenPath.length - 1;
-  $('#stat-bonuses').textContent = reveal.bonusLedger.filter((b) => b.outcome === 'COLLECTED').length;
-  $('#stat-allocs').textContent = Math.max(...reveal.players.map((p) => p.allocationNumber));
+  $('#stat-bonus').textContent = reveal.bonusLedger.filter((b) => b.outcome === 'COLLECTED').length;
 
-  // Legend of every castle, now public.
-  const legend = $('#reveal-legend');
-  legend.innerHTML = '';
-  for (const p of reveal.players) {
-    const row = el('div', `legend-row${p.seat === reveal.winner ? ' is-winner' : ''}`);
-    const sw = el('span', 'swatch');
-    sw.style.background = SEAT_COLORS[p.seat];
-    row.append(sw, el('span', '', `${p.displayName}${p.controlMode === 'AI' ? ' · computer' : ''}`));
-    row.appendChild(el('span', 'coord', `r${p.castlePosition.r} c${p.castlePosition.c}`));
-    legend.appendChild(row);
-  }
-
-  buildRevealBoard(reveal);
-
-  $('#btn-replay').onclick = () => runReplay(reveal);
-  $('#btn-again').onclick = () => {
-    app.setup.seed = randomCode();
-    buildLobby();
-    showScreen('screen-lobby');
-  };
-  $('#btn-share').onclick = () => shareResult(reveal);
+  buildGrid($('#replay-cells'), $('#replay-board'), reveal.board.width, reveal.board.height, null);
+  $('#replay-overlay').innerHTML = '';
+  $('#replay-path').innerHTML = '';
 
   const slider = $('#replay-slider');
-  slider.max = String(reveal.completeQueenPath.length - 1);
+  slider.max = String(reveal.roundLog.length);
   slider.value = slider.max;
-  slider.oninput = () => drawPath(reveal, Number(slider.value));
+  slider.oninput = () => {
+    stopReplay();
+    drawReplayFrame(Number(slider.value));
+  };
 
-  drawPath(reveal, reveal.completeQueenPath.length - 1);
+  drawReplayFrame(reveal.roundLog.length);
+  setTimeout(() => runReplay(), 700);
 }
 
-function buildRevealBoard(reveal) {
-  const board = $('#reveal-board');
-  board.style.setProperty('--cols', reveal.board.width);
-  board.style.setProperty('--rows', reveal.board.height);
+/**
+ * Draw the board exactly as it stood at the END of round `n`.
+ * n = 0 is the opening position. Everything is public here (§18).
+ */
+function drawReplayFrame(n) {
+  const reveal = app.reveal;
+  if (!reveal) return;
+  const overlay = $('#replay-overlay');
+  overlay.innerHTML = '';
 
-  const cells = $('#reveal-cells');
-  cells.innerHTML = '';
-  for (let r = 0; r < reveal.board.height; r++) {
-    for (let c = 0; c < reveal.board.width; c++) cells.appendChild(el('div', 'cell'));
-  }
+  const log = reveal.roundLog;
+  const upto = Math.max(0, Math.min(n, log.length));
 
-  const layer = $('#reveal-overlay');
-  layer.innerHTML = '';
+  // Castles — all four, permanently.
   for (const p of reveal.players) {
-    const mark = el('div', 'marker castle-mark', GLYPH.castle(SEAT_COLORS[p.seat]));
-    mark.style.setProperty('--r', p.castlePosition.r);
-    mark.style.setProperty('--c', p.castlePosition.c);
-    mark.title = `${p.displayName}'s castle`;
-    if (p.seat === reveal.winner) mark.classList.add('mine');
-    layer.appendChild(mark);
+    const mark = el('div', 'marker castle-mark', ART.castle(SEAT_COLORS[p.seat]));
+    mark.style.color = SEAT_COLORS[p.seat];
+    placeMarker(mark, p.castlePosition);
+    if (p.seat === reveal.winner && upto === log.length) mark.classList.add('mine', 'win');
+    overlay.appendChild(mark);
   }
+
+  // Treasure stacks as they stood entering the next round, ringed in the
+  // colour of the player they belonged to.
+  const frame = log[Math.min(upto, log.length - 1)];
+  const bonusSet = upto === 0 ? log[0]?.bonuses : frame?.bonuses;
+  for (const b of bonusSet || []) {
+    if (!b || b.reward <= 0) continue;
+    const mark = el('div', 'marker bonus-mark');
+    mark.style.setProperty('--seat', SEAT_COLORS[b.seat]);
+    mark.innerHTML = `<div class="bonus-ring"></div><div class="bonus-pile">${ART.treasure}<span class="value num">${b.reward}</span></div>`;
+    placeMarker(mark, b.position);
+    overlay.appendChild(mark);
+  }
+
+  // Trail up to this point.
+  const pts = [reveal.completeQueenPath[0]];
+  for (let i = 0; i < upto; i++) pts.push(...log[i].path);
+  drawTrail(pts, reveal.board);
 
   const queen = el('div', 'marker queen');
-  queen.id = 'reveal-queen';
-  queen.innerHTML = GLYPH.queen;
-  layer.appendChild(queen);
+  queen.id = 'replay-queen';
+  queen.innerHTML = `<div class="queen-glow"></div>${ART.queen}`;
+  placeMarker(queen, pts[pts.length - 1] || reveal.completeQueenPath[0]);
+  overlay.appendChild(queen);
+
+  $('#replay-label').textContent = `${upto} / ${log.length}`;
+  $('#replay-slider').value = String(upto);
 }
 
-function drawPath(reveal, upto) {
-  const svg = $('#reveal-path');
-  const w = reveal.board.width;
-  svg.setAttribute('viewBox', `0 0 ${w} ${reveal.board.height}`);
+function drawTrail(points, board) {
+  const svg = $('#replay-path');
+  svg.setAttribute('viewBox', `0 0 ${board.width} ${board.height}`);
   svg.setAttribute('preserveAspectRatio', 'none');
-  const pts = reveal.completeQueenPath.slice(0, upto + 1).map((p) => `${p.c + 0.5},${p.r + 0.5}`).join(' ');
-  const start = reveal.completeQueenPath[0];
-  svg.innerHTML = `
-    <polyline points="${pts}" fill="none" stroke="rgba(255,233,168,.75)" stroke-width="0.13"
-      stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"
-      style="filter:drop-shadow(0 0 3px rgba(255,220,140,.7))"/>
-    <circle cx="${start.c + 0.5}" cy="${start.r + 0.5}" r="0.19" fill="none"
-      stroke="rgba(255,233,168,.9)" stroke-width="0.07"/>`;
-
-  const p = reveal.completeQueenPath[upto];
-  const queen = $('#reveal-queen');
-  if (queen && p) {
-    queen.style.setProperty('--r', p.r);
-    queen.style.setProperty('--c', p.c);
+  if (!points.length) {
+    svg.innerHTML = '';
+    return;
   }
-  $('#replay-step').textContent = `${upto} / ${reveal.completeQueenPath.length - 1}`;
+  const d = points.map((p) => `${p.c + 0.5},${p.r + 0.5}`).join(' ');
+  const start = points[0];
+  svg.innerHTML = `
+    <polyline points="${d}" fill="none" stroke="rgba(255,225,150,.28)" stroke-width="7"
+      stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>
+    <polyline points="${d}" fill="none" stroke="rgba(255,238,190,.95)" stroke-width="2.4"
+      stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>
+    <circle cx="${start.c + 0.5}" cy="${start.r + 0.5}" r="0.22" fill="rgba(10,14,20,.9)"
+      stroke="rgba(255,235,175,.95)" stroke-width="2.2" vector-effect="non-scaling-stroke"/>`;
 }
 
-function runReplay(reveal) {
-  clearInterval(app.replayTimer);
-  const slider = $('#replay-slider');
-  let i = 0;
-  slider.value = '0';
-  drawPath(reveal, 0);
+function runReplay() {
+  stopReplay();
+  const total = app.reveal.roundLog.length;
+  let n = 0;
+  drawReplayFrame(0);
   app.replayTimer = setInterval(() => {
-    i++;
-    if (i >= reveal.completeQueenPath.length) {
-      clearInterval(app.replayTimer);
-      return;
-    }
-    slider.value = String(i);
-    drawPath(reveal, i);
-  }, UI_TIMING.replayStepMs);
+    n++;
+    drawReplayFrame(n);
+    if (n >= total) stopReplay();
+  }, UI_TIMING.replayRoundMs);
 }
 
-async function shareResult(reveal) {
-  const text =
-    `QUEEN'S TUG ${reveal.gameId}\n` +
-    `${reveal.winnerName} won in ${reveal.roundsPlayed} rounds.\n` +
-    `The queen travelled ${reveal.completeQueenPath.length - 1} cells across a ${reveal.board.width}×${reveal.board.height} board.\n` +
-    `Same board: ${inviteUrl(reveal.gameId)}`;
+function stopReplay() {
+  if (app.replayTimer) clearInterval(app.replayTimer);
+  app.replayTimer = null;
+}
+
+async function shareResult() {
+  const r = app.reveal;
+  const who = r.winner === app.seat ? 'I' : r.players[r.winner].displayName;
+  const text = `Queen's Tug ${r.gameId} — ${who} won in ${r.roundsPlayed} rounds.\nSame board: ${inviteUrl(r.gameId)}`;
   try {
     if (navigator.share) await navigator.share({ title: "Queen's Tug", text });
     else {
       await navigator.clipboard.writeText(text);
-      toast('Result copied to the clipboard.', 'gold');
+      toast('Result copied.', 'gold');
     }
   } catch {
-    /* the person dismissed the share sheet */
+    /* dismissed */
   }
 }
 
-/* ================================================================== *
- * MODALS + KEYBOARD
- * ================================================================== */
+/* ------------------------------------------------------------------ *
+ * Modals
+ * ------------------------------------------------------------------ */
 
-function openModal(id) {
-  $(`#${id}`).classList.add('is-open');
-}
-function closeModals() {
-  $$('.modal').forEach((m) => m.classList.remove('is-open'));
-}
+const openModal = (id) => ($(`#${id}`).hidden = false);
+const closeModals = () => $$('.modal').forEach((m) => (m.hidden = true));
 
-function initShell() {
-  $$('[data-close-modal]').forEach((b) => (b.onclick = closeModals));
-  $$('.modal').forEach((m) => {
-    m.addEventListener('click', (e) => {
-      if (e.target === m) closeModals();
-    });
-  });
+/* ------------------------------------------------------------------ *
+ * Boot
+ * ------------------------------------------------------------------ */
 
-  $('#btn-help').onclick = () => openModal('modal-rules');
-  $('#btn-quit').onclick = () => {
-    if (confirm('Leave this game and return to the title screen?')) {
-      app.host?.dispose();
-      app.unsub?.();
-      app.host = null;
-      showScreen('screen-title');
-    }
+function boot() {
+  const params = new URLSearchParams(location.search);
+  if (params.has('turbo')) {
+    const f = Number(params.get('turbo'));
+    setPacing(Number.isFinite(f) && f > 0 ? f : 0.05);
+  }
+
+  // Icons
+  $('#btn-help').innerHTML = ART.help;
+  $('#btn-exit').innerHTML = ART.exit;
+  sound.restorePreference();
+  refreshSoundIcon();
+
+  // Title
+  $('#btn-play').onclick = () => {
+    sound.unlock();
+    sound.play('press');
+    openGame(randomCode());
+  };
+  $('#btn-join').onclick = () => {
+    sound.unlock();
+    sound.play('press');
+    openModal('modal-join');
+    setTimeout(() => $('#join-input').focus(), 60);
+  };
+  $('#btn-rules').onclick = () => {
+    sound.unlock();
+    sound.play('press');
+    openModal('modal-rules');
   };
 
-  for (const d of DIRECTIONS) {
-    const pad = $(`#pad-${d.toLowerCase()}`);
-    pad.onclick = (e) => adjustStake(d, e.shiftKey ? -app.stakeStep : app.stakeStep);
-    pad.oncontextmenu = (e) => {
-      e.preventDefault();
-      adjustStake(d, -app.stakeStep);
-    };
-  }
-  $('#btn-clear').onclick = clearStake;
-  $('#btn-lock').onclick = lockIn;
-
-  $$('#seg-step button').forEach((b) => {
-    b.onclick = () => {
-      app.stakeStep = Number(b.dataset.step);
-      $$('#seg-step button').forEach((x) => x.classList.toggle('is-on', x === b));
-    };
+  // Join modal
+  $('#btn-join-go').onclick = () => {
+    const code = $('#join-input').value.trim().toUpperCase();
+    if (!code) return;
+    closeModals();
+    openGame(code.startsWith('QT-') ? code : `QT-${code}`);
+  };
+  $('#join-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') $('#btn-join-go').click();
   });
 
+  // Game
+  $('#board-cells').addEventListener('click', onBoardClick);
+  $('#btn-lock').onclick = lockIn;
+  $('#btn-start').onclick = beginPlay;
+  $('#btn-newcode').onclick = () => {
+    sound.play('press');
+    openGame(randomCode());
+  };
+  $('#btn-copy').onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(inviteUrl(app.code));
+      toast('Link copied — send it to your friends.', 'gold');
+    } catch {
+      toast(inviteUrl(app.code));
+    }
+  };
+  $('#btn-help').onclick = () => openModal('modal-rules');
+  $('#btn-sound').onclick = () => {
+    sound.toggle();
+    refreshSoundIcon();
+    if (!sound.isMuted()) sound.play('press');
+  };
+  $('#btn-exit').onclick = () => {
+    stopReplay();
+    app.host?.dispose();
+    app.unsub?.();
+    app.host = null;
+    app.started = false;
+    showScreen('screen-title');
+  };
+
+  // Result
+  $('#btn-replay').onclick = () => {
+    sound.play('press');
+    runReplay();
+  };
+  $('#btn-again').onclick = () => {
+    stopReplay();
+    sound.play('press');
+    openGame(randomCode());
+  };
+  $('#btn-share').onclick = shareResult;
+
+  // Modals
+  $$('[data-close]').forEach((b) => (b.onclick = closeModals));
+  $$('.modal').forEach((m) =>
+    m.addEventListener('click', (e) => {
+      if (e.target === m) closeModals();
+    })
+  );
+
+  // Keyboard
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') return closeModals();
-    if (!app.host || !$('#screen-game').classList.contains('is-active')) return;
+    if ($('#screen-game').hidden) return;
     if (['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName)) return;
-
     const map = { ArrowUp: 'UP', ArrowDown: 'DOWN', ArrowLeft: 'LEFT', ArrowRight: 'RIGHT' };
     if (map[e.key]) {
       e.preventDefault();
-      adjustStake(map[e.key], e.shiftKey ? -app.stakeStep : app.stakeStep);
+      stake(map[e.key]);
     } else if (e.key === 'Enter') {
       e.preventDefault();
-      lockIn();
-    } else if (e.key === 'Backspace') {
-      e.preventDefault();
-      clearStake();
-    } else if (['1', '2', '3'].includes(e.key)) {
-      const steps = { 1: 1, 2: 5, 3: 10 };
-      app.stakeStep = steps[e.key];
-      $$('#seg-step button').forEach((x) => x.classList.toggle('is-on', Number(x.dataset.step) === app.stakeStep));
+      if (!app.started) beginPlay();
+      else lockIn();
     }
   });
 
-  const params = new URLSearchParams(location.search);
-
-  /**
-   * `?turbo=N` scales animation and AI-thinking delays. Presentation only —
-   * game rules, resolution and timer deadlines are untouched. Handy for fast
-   * playtest sessions and required by the automated UI test.
-   */
-  if (params.has('turbo')) {
-    const factor = Number(params.get('turbo'));
-    setPacing(Number.isFinite(factor) && factor > 0 ? factor : 0.05);
-  }
-
-  // §20 — an invitation link carries only the board seed.
   const joinCode = params.get('game');
   if (joinCode) {
-    app.setup.seed = joinCode.toUpperCase();
-    buildLobby();
-    showScreen('screen-lobby');
-    toast(`Joined board ${app.setup.seed}.`, 'gold');
-    return;
+    openGame(joinCode.toUpperCase());
+    toast(`Board ${joinCode.toUpperCase()} loaded.`, 'gold');
+  } else {
+    showScreen('screen-title');
   }
-  showScreen('screen-title');
 }
 
-/* ---------------- boot ---------------- */
+function refreshSoundIcon() {
+  $('#btn-sound').innerHTML = sound.isMuted() ? ART.soundOff : ART.soundOn;
+}
 
-initShell();
-initTitle();
+boot();

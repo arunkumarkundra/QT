@@ -72,7 +72,7 @@ export function createPlayerView(state, seat) {
       decisionTimerMs: state.config.decisionTimerMs,
       startingCoins: state.config.startingCoins,
       replenishCoins: state.config.replenishCoins,
-      bonusRewards: [...state.config.bonusRewards],
+        bonusStartReward: state.config.bonusStartReward,
       playerCount: state.config.playerCount,
     },
 
@@ -142,6 +142,8 @@ export function createRevealView(state) {
     castles: state.castles.map((c) => cell(c.r, c.c)),
     completeQueenPath: state.completeQueenPath.map((p) => cell(p.r, p.c)),
     bonusLedger: state.bonusLedger.map((b) => ({ ...b })),
+    /** Round-by-round public movie of the finished game. */
+    roundLog: state.roundLog.map((r) => ({ ...r })),
     metrics: { ...state.metrics },
   };
 }
@@ -179,6 +181,7 @@ export function auditViewForLeaks(state, seat) {
   if ('seed' in view) problems.push('RNG seed exposed — future placements predictable');
   if ('rngState' in view) problems.push('RNG cursor exposed');
   if ('bonusLedger' in view) problems.push('Bonus ledger exposed');
+  if ('roundLog' in view) problems.push('Round log exposed — it contains every bonus position');
   if (view.lastResolution && '_private' in view.lastResolution) problems.push('Private resolution slice exposed');
 
   return problems;
