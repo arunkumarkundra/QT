@@ -174,6 +174,9 @@ function toast(msg, kind = '') {
 
 function showScreen(id) {
   for (const s of $$('.screen')) s.hidden = s.id !== id;
+  // The processional belongs to the start screen only.
+  if (id === 'screen-title') sound.startTheme();
+  else sound.stopTheme();
 }
 
 function randomCode() {
@@ -308,7 +311,20 @@ const soloLobby = () => ({
 function showCode(code) {
   app.code = code;
   $('#room-code').textContent = code;
-  $('#room-link').textContent = inviteUrl(code);
+}
+
+/**
+ * The start screen has two faces. The host can start, change the board and
+ * invite. A joiner can only wait or leave — showing them a Start button or a
+ * "join with a code" option when they have already joined is just noise.
+ */
+function setLobbyMode(mode) {
+  const hosting = mode === 'host';
+  $('#btn-room-start').hidden = !hosting;
+  $('#btn-room-newboard').hidden = !hosting;
+  $('#btn-join').hidden = !hosting;
+  $('#btn-leave-room').hidden = hosting;
+  $('#room-status').classList.toggle('waiting', !hosting);
 }
 
 /**
@@ -320,9 +336,9 @@ async function prepareHostLobby() {
   app.online = true;
   app.isHost = true;
   showCode(randomCode());
-  $('#btn-room-start').hidden = false;
+  setLobbyMode('host');
   $('#room-status').classList.remove('error');
-  $('#room-status').textContent = 'Empty seats are played by the computer.';
+  $('#room-status').textContent = 'Share the code to fill a seat. Empty seats are played by the computer.';
 
   leaveRoom();
   if (app.host) app.host.dispose();
@@ -351,7 +367,7 @@ async function prepareHostLobby() {
         const humans = lobby.seats.filter((s) => s.kind === 'human').length;
         $('#room-status').textContent =
           humans === 1
-            ? 'Empty seats are played by the computer.'
+            ? 'Share the code to fill a seat. Empty seats are played by the computer.'
             : `${humans} players seated. Start whenever you are ready.`;
       },
     });
@@ -367,7 +383,7 @@ async function prepareJoinLobby(code) {
   app.online = true;
   app.isHost = false;
   showCode(code);
-  $('#btn-room-start').hidden = true;
+  setLobbyMode('join');
   $('#room-status').classList.remove('error');
   $('#room-status').textContent = 'Looking for the game…';
   renderRoomSeats({ seats: [0, 1, 2, 3].map((seat) => ({ seat, kind: 'bot' })) }, -1);
@@ -381,7 +397,7 @@ async function prepareJoinLobby(code) {
 
     app.net.onLobby((lobby) => {
       renderRoomSeats(lobby, remote.getSeat?.() ?? -1);
-      $('#room-status').textContent = 'Seated. Waiting for the host to start…';
+      $('#room-status').textContent = 'Seated — waiting for the host to start the game.';
       sound.play('join');
     });
 
@@ -392,15 +408,17 @@ async function prepareJoinLobby(code) {
       }
     });
   } catch {
-    $('#room-status').textContent = 'Could not reach the matchmaking relay.';
+    $('#room-status').textContent =
+      'Could not reach that game. Check the code, or start one of your own.';
     $('#room-status').classList.add('error');
-    $('#btn-room-start').hidden = false; // fall back to a local game
+    setLobbyMode('host');
   }
 }
 
 /** The host presses Start. Anyone seated comes along; empty seats stay AI. */
 function startTheGame() {
   sound.unlock();
+  sound.stopTheme();
   sound.play('press');
   if (!app.host) app.host = newLocalHost(app.code);
   app.host.start();
@@ -445,10 +463,14 @@ function render() {
   const view = app.game.getView();
   if (!view) return;
   renderSeatChips();
-  renderMarkers(view);
-  renderTargets(view);
+  // While the queen is walking, the board belongs to the animation. Redrawing
+  // markers here was making the NEXT round's treasure appear before the queen
+  // had finished moving.
+  if (!app.animating) {
+    renderMarkers(view);
+    renderTargets(view);
+  }
   renderPurse(view);
-  renderUndo(view);
   renderStatus(view);
   renderTimer();
 }
@@ -563,10 +585,7 @@ function renderPurse(view) {
   value.textContent = balance;
 }
 
-function renderUndo(view) {
-  const btn = $('#btn-undo');
-  btn.disabled = !planningAllowed(view) || view.you.currentBidTotal === 0;
-}
+
 
 function renderStatus(view) {
   const status = $('#status');
@@ -574,17 +593,19 @@ function renderStatus(view) {
 
   if (view.you.locked) {
     const waiting = view.opponents.filter((o) => !o.locked).length;
-    status.innerHTML = waiting ? `Waiting for <b>${waiting}</b> more…` : 'Resolving…';
+    status.innerHTML = waiting
+      ? `Locked in. Waiting for <b>${waiting}</b> ${waiting === 1 ? 'player' : 'players'}…`
+      : 'Counting the coins…';
     return;
   }
   if (view.you.coinsRemaining === 0) {
-    status.innerHTML = 'Out of coins — everyone refills once all four are empty. Tap the queen to pass.';
+    status.innerHTML = 'No coins left. Tap the queen to pass — everyone refills once all four are empty.';
     return;
   }
   status.innerHTML =
     view.you.currentBidTotal > 0
-      ? 'Tap the queen to lock in.'
-      : 'Tap a glowing cell to pull the queen that way.';
+      ? 'Tap the queen to lock in your move.'
+      : 'Click a direction to stake coins.';
 }
 
 function renderTimer() {
@@ -633,7 +654,44 @@ function planningAllowed(view) {
 function onBoardClick(e) {
   const cell = e.target.closest('.cell');
   if (!cell || !cell.dataset.dir) return;
+  if (app.suppressClick) {
+    app.suppressClick = false;
+    return;
+  }
   stake(cell.dataset.dir);
+}
+
+/**
+ * Removing coins. The primary gesture is clicking the opposite direction,
+ * which reads naturally because nobody wants to pay to pull both ways at once.
+ * When the queen stands against a wall there IS no opposite cell, so a
+ * long-press (or right-click) on a stack takes one coin back.
+ */
+function wireCoinRemoval(root) {
+  let timer = null;
+  const start = (e) => {
+    const cell = e.target.closest?.('.cell');
+    if (!cell || !cell.dataset.dir) return;
+    timer = setTimeout(() => {
+      timer = null;
+      app.suppressClick = true;
+      undoCoin(cell.dataset.dir);
+    }, 420);
+  };
+  const cancel = () => {
+    if (timer) clearTimeout(timer);
+    timer = null;
+  };
+  root.addEventListener('pointerdown', start);
+  root.addEventListener('pointerup', cancel);
+  root.addEventListener('pointerleave', cancel);
+  root.addEventListener('pointercancel', cancel);
+  root.addEventListener('contextmenu', (e) => {
+    const cell = e.target.closest('.cell');
+    if (!cell || !cell.dataset.dir) return;
+    e.preventDefault();
+    undoCoin(cell.dataset.dir);
+  });
 }
 
 /**
@@ -666,16 +724,16 @@ function stake(dir) {
   commitBid(bid, { added: dir });
 }
 
-/** Take back the most recently placed coin, wherever it went. */
-function undoCoin() {
+/** Take back a coin: from `preferred` if given, otherwise the last placed. */
+function undoCoin(preferred = null) {
   const view = app.game.getView();
   if (!planningAllowed(view) || view.you.currentBidTotal === 0) return;
 
   const bid = { ...view.you.currentBid };
   // Prefer the genuine last placement; fall back to any direction holding coins
   // so the control always works even after a re-sync.
-  let target = null;
-  for (let i = app.placements.length - 1; i >= 0; i--) {
+  let target = preferred && (bid[preferred] || 0) > 0 ? preferred : null;
+  for (let i = app.placements.length - 1; target === null && i >= 0; i--) {
     if ((bid[app.placements[i]] || 0) > 0) {
       target = app.placements[i];
       break;
@@ -744,7 +802,7 @@ async function playResolution() {
   if (res.tie) {
     // Deliberately unresolved: a stalemate must never sound like progress.
     sound.play('noMove');
-    status.innerHTML = `<span class="verdict">The queen holds her ground</span>`;
+    status.innerHTML = `<span class="verdict">Forces cancel — the queen holds her ground</span>`;
     await wait(UI_TIMING.cancelAnimMs + 500);
   } else {
     sound.play('moveStart');
@@ -1131,9 +1189,9 @@ function boot() {
 
   $('#btn-help').innerHTML = ART.help;
   $('#btn-exit').innerHTML = ART.exit;
-  $('#btn-undo').innerHTML = ART.undo;
   $('#coin-icon').innerHTML = ART.coin;
   $('#btn-rules').innerHTML = ART.help;
+  $('#btn-leave-room').innerHTML = ART.exit;
   sound.restorePreference();
   refreshSoundIcon();
 
@@ -1143,12 +1201,29 @@ function boot() {
    * relying on one particular button.
    */
   for (const evt of ['pointerdown', 'touchstart', 'keydown']) {
-    document.addEventListener(evt, () => sound.unlock(), { passive: true });
+    document.addEventListener(
+      evt,
+      () => {
+        sound.unlock();
+        if (!$('#screen-title').hidden) sound.startTheme();
+      },
+      { passive: true }
+    );
   }
 
   // ---- start screen ----
   $('#btn-room-start').onclick = startTheGame;
   $('#btn-room-copy').onclick = () => copyLink(app.code);
+  $('#btn-room-invite').onclick = () => inviteOthers(app.code);
+  $('#btn-room-newboard').onclick = () => {
+    sound.play('press');
+    prepareHostLobby();
+  };
+  $('#btn-leave-room').onclick = () => {
+    sound.play('press');
+    leaveRoom();
+    prepareHostLobby();
+  };
   $('#room-code').onclick = () => copyCode(app.code);
   $('#btn-join').onclick = () => {
     sound.play('press');
@@ -1160,7 +1235,10 @@ function boot() {
     $(id).onclick = () => {
       sound.toggle();
       refreshSoundIcon();
-      if (!sound.isMuted()) sound.play('press');
+      if (!sound.isMuted()) {
+        sound.play('press');
+        if (!$('#screen-title').hidden) sound.startTheme();
+      }
     };
   }
 
@@ -1177,10 +1255,10 @@ function boot() {
 
   // ---- board ----
   $('#board-cells').addEventListener('click', onBoardClick);
+  wireCoinRemoval($('#board-cells'));
   $('#board-overlay').addEventListener('click', (e) => {
     if (e.target.closest('.queen.armed')) lockIn();
   });
-  $('#btn-undo').onclick = undoCoin;
   $('#btn-exit').onclick = leaveToTitle;
 
   // ---- result ----
@@ -1226,6 +1304,22 @@ function boot() {
   const joinCode = params.get('game');
   if (joinCode) prepareJoinLobby(joinCode.toUpperCase());
   else prepareHostLobby();
+}
+
+/** Share a ready-made invitation rather than a bare URL. */
+async function inviteOthers(code) {
+  const text = `Join my game of Queen's Tug — four hidden castles, one wandering queen. Tap to take a seat:`;
+  const url = inviteUrl(code);
+  try {
+    if (navigator.share) {
+      await navigator.share({ title: "Queen's Tug", text, url });
+      return;
+    }
+    await navigator.clipboard.writeText(`${text}\n${url}`);
+    toast('Invitation copied — paste it anywhere.', 'gold');
+  } catch {
+    /* the person dismissed the sheet */
+  }
 }
 
 async function copyCode(code) {
@@ -1279,3 +1373,6 @@ function refreshSoundIcon() {
 }
 
 boot();
+
+// Exposed for the automated UI tests so every sound recipe can be exercised.
+if (typeof window !== 'undefined') window.__qtSound = sound;

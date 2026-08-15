@@ -28,7 +28,7 @@ Pages branch and it works as-is; no build step is required for Pages, because
 
 ```bash
 npm install            # jsdom, for the UI tests only
-npm test               # all three suites — 120 assertions
+npm test               # all three suites — 125 assertions
 npm run test:rules     # the §23 rule suite alone, zero dependencies
 npm run simulate 200   # headless AI games, reports the §27 metrics
 npm run build          # regenerate dist/queens-tug.html from src/
@@ -47,10 +47,10 @@ cells, stopping at the wall. Win by making her **finish** a move on your castle.
 
 **The board is the controller.** There is no bidding panel. Tapping a cell adds
 one coin; tapping the *opposite* cell takes one back off the pile. When the
-queen stands against a wall there is no opposite cell, so the undo button beside
-the coin balance always works too. **Tap the queen herself to lock in** — with
-nothing staked, that is how you pass. Arrow keys stake, Backspace undoes, Enter
-locks.
+queen stands against a wall there is no opposite cell, so a **long-press (or
+right-click) on a stack** removes a coin too. **Tap the queen herself to lock
+in** — with nothing staked, that is how you pass. Arrow keys stake, Backspace
+undoes, Enter locks.
 
 **Tuning lives in `src/config.js`**, not in a settings screen: `startingCoins`,
 `replenishCoins`, `bonusStartReward`, `decisionTimerMs`, `boardWidth/Height`.
@@ -59,8 +59,12 @@ locks.
 speeds up animation and AI pacing for fast playtesting — presentation only, it
 cannot change an outcome.
 
-**Sound** is synthesised with WebAudio at runtime, so there are no audio files
-to ship. The speaker button mutes it and the choice is remembered.
+**Sound and music** are synthesised with WebAudio at runtime — no audio files
+ship at all. The title theme is a short processional in D minor, written out as
+note data in `src/sound.js` (`THEME_MELODY`, `THEME_BASS`, `THEME_CHIME`) and
+built from the same bell voice as the game sounds, so edits are a matter of
+changing numbers. The speaker button mutes everything and the choice is
+remembered.
 
 ## Architecture
 
@@ -101,14 +105,14 @@ client can send a malformed bid and get it rejected; it cannot send `"move Right
 
 ## Tests
 
-120 assertions across three suites. The rule suite has zero dependencies and
+125 assertions across three suites. The rule suite has zero dependencies and
 covers every bullet in §23, each tagged with its spec section.
 
 | Suite | Covers |
 | --- | --- |
 | `tests/engine.test.js` | 77 rule tests — placement, bidding, cancellation, boundary stopping, castles, bonus decay/collection/replacement, coin economy, the information boundary, determinism, the reveal. |
 | `tests/host.test.js` | 13 tests that the host behaves like a server: filtered reads, rejected outcomes, refused reveals, takeover reporting. |
-| `tests/ui.test.js` | 29 tests booting the built file in jsdom and playing a full game through the real DOM. |
+| `tests/ui.test.js` | 34 tests booting the built file in jsdom and playing a full game through the real DOM. |
 
 The UI tests check the *built* file, so a broken bundle fails the suite rather
 than shipping.

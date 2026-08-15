@@ -219,6 +219,7 @@ export function createHost({
       return {
         gameId: state.gameId,
         status: state.status,
+        started: state.status !== 'LOBBY',
         phase: state.phase,
         roundNumber: state.roundNumber,
         seats: state.players.map((p) => ({

@@ -34,7 +34,7 @@ function ensureContext() {
       return null;
     }
     audio.master = audio.ctx.createGain();
-    audio.master.gain.value = 0.38;
+    audio.master.gain.value = 0.55;
     audio.master.connect(audio.ctx.destination);
     audio.ready = true;
   }
@@ -110,18 +110,81 @@ function noise({ start = 0, dur = 0.25, gain = 0.3, freq = 900, q = 1, type = 'l
 }
 
 /** A struck metal note with a body — the base of most regal sounds. */
-function bell({ freq, start = 0, dur = 1.1, gain = 0.22, detune = 1.004 }) {
-  voice({ type: 'sine', from: freq, to: freq, start, dur, gain });
-  voice({ type: 'sine', from: freq * detune, to: freq * detune, start, dur: dur * 0.9, gain: gain * 0.55 });
-  voice({ type: 'sine', from: freq * 2.01, to: freq * 2.01, start, dur: dur * 0.45, gain: gain * 0.28 });
-  voice({ type: 'sine', from: freq * 2.98, to: freq * 2.98, start, dur: dur * 0.25, gain: gain * 0.14 });
+/**
+ * A struck metal note. The upper partials carry most of the audible weight on
+ * laptop speakers, which reproduce almost nothing below ~200 Hz, so they are
+ * mixed deliberately loud relative to the fundamental.
+ */
+function bell({ freq, start = 0, dur = 1.1, gain = 0.34, detune = 1.004 }) {
+  voice({ type: 'triangle', from: freq, to: freq, start, dur, gain });
+  voice({ type: 'sine', from: freq * detune, to: freq * detune, start, dur: dur * 0.9, gain: gain * 0.6 });
+  voice({ type: 'sine', from: freq * 2.01, to: freq * 2.01, start, dur: dur * 0.5, gain: gain * 0.5 });
+  voice({ type: 'sine', from: freq * 2.98, to: freq * 2.98, start, dur: dur * 0.3, gain: gain * 0.3 });
+  voice({ type: 'sine', from: freq * 4.02, to: freq * 4.02, start, dur: dur * 0.16, gain: gain * 0.16 });
 }
 
 /** Metal-on-metal chink, for coins. */
-function chink({ freq = 2100, start = 0, gain = 0.2 }) {
+function chink({ freq = 2100, start = 0, gain = 0.3 }) {
   noise({ start, dur: 0.05, gain: gain * 0.9, freq, type: 'bandpass', q: 8 });
   voice({ type: 'triangle', from: freq, to: freq * 0.82, start, dur: 0.09, gain: gain * 0.5 });
   voice({ type: 'sine', from: freq * 1.51, to: freq * 1.4, start: start + 0.008, dur: 0.07, gain: gain * 0.3 });
+}
+
+/* ------------------------------------------------------------------ *
+ * Title theme
+ *
+ * A short processional in D minor — the key of ceremony and intrigue — that
+ * loops under the start screen. Built from the same bell voice as the game
+ * sounds so the whole thing feels of a piece. Written out as note data rather
+ * than a recording: it costs nothing to ship and never needs decoding.
+ * ------------------------------------------------------------------ */
+
+const NOTE = {
+  D3: 146.8, F3: 174.6, G3: 196.0, A3: 220.0, Bb3: 233.1, C4: 261.6,
+  D4: 293.7, E4: 329.6, F4: 349.2, G4: 392.0, A4: 440.0, Bb4: 466.2,
+  C5: 523.3, D5: 587.3, E5: 659.3, F5: 698.5, A5: 880.0, D6: 1174.7,
+};
+
+/** [beat, frequency, beats-long, level] */
+const THEME_MELODY = [
+  [0, NOTE.D4, 1.5, 0.26], [1.5, NOTE.A4, 0.5, 0.22],
+  [2, NOTE.F4, 1, 0.24], [3, NOTE.G4, 1, 0.24],
+  [4, NOTE.A4, 2, 0.28], [6, NOTE.G4, 1, 0.2], [7, NOTE.F4, 1, 0.2],
+  [8, NOTE.E4, 1.5, 0.24], [9.5, NOTE.F4, 0.5, 0.2],
+  [10, NOTE.D4, 2, 0.26],
+  [12, NOTE.A4, 1, 0.24], [13, NOTE.Bb4, 1, 0.24],
+  [14, NOTE.A4, 2, 0.3],
+];
+
+/** Sustained root notes underneath. */
+const THEME_BASS = [
+  [0, NOTE.D3, 4, 0.2], [4, NOTE.F3, 4, 0.2],
+  [8, NOTE.Bb3, 4, 0.2], [12, NOTE.A3, 4, 0.22],
+];
+
+/** Sparse high answer, like a distant chime. */
+const THEME_CHIME = [
+  [4.5, NOTE.D5, 1, 0.12], [6.5, NOTE.F5, 1, 0.1],
+  [12.5, NOTE.A5, 1, 0.12], [14.5, NOTE.D6, 2, 0.14],
+];
+
+const BEAT = 0.46; // seconds — an unhurried processional
+const THEME_BEATS = 16;
+
+let themeTimer = null;
+let themePlaying = false;
+
+function scheduleTheme(offset = 0) {
+  for (const [beat, freq, len, gain] of THEME_MELODY) {
+    bell({ freq, start: offset + beat * BEAT, dur: len * BEAT * 1.5, gain: gain * 0.7 });
+  }
+  for (const [beat, freq, len, gain] of THEME_BASS) {
+    voice({ type: 'triangle', from: freq, to: freq, start: offset + beat * BEAT, dur: len * BEAT, gain });
+    voice({ type: 'sine', from: freq * 2, to: freq * 2, start: offset + beat * BEAT, dur: len * BEAT * 0.7, gain: gain * 0.5 });
+  }
+  for (const [beat, freq, len, gain] of THEME_CHIME) {
+    bell({ freq, start: offset + beat * BEAT, dur: len * BEAT * 2, gain });
+  }
 }
 
 const RECIPES = {
@@ -131,22 +194,22 @@ const RECIPES = {
    */
   coinAdd(step = 0) {
     const f = 1950 + Math.min(step, 8) * 70;
-    chink({ freq: f, gain: 0.22 });
-    chink({ freq: f * 1.28, start: 0.035, gain: 0.1 });
+    chink({ freq: f, gain: 0.34 });
+    chink({ freq: f * 1.28, start: 0.035, gain: 0.16 });
     voice({ type: 'sine', from: 190, to: 150, dur: 0.07, gain: 0.09 });
   },
 
   /** Sliding a coin back off the table. */
   coinRemove() {
-    noise({ dur: 0.11, gain: 0.13, freq: 1500, type: 'bandpass', q: 3 });
-    voice({ type: 'triangle', from: 900, to: 520, dur: 0.12, gain: 0.13 });
+    noise({ dur: 0.12, gain: 0.22, freq: 1500, type: 'bandpass', q: 3 });
+    voice({ type: 'triangle', from: 900, to: 520, dur: 0.13, gain: 0.22 });
   },
 
   /** Committing. A heavy iron bolt driven home. */
   lock() {
-    noise({ dur: 0.06, gain: 0.3, freq: 320, type: 'lowpass' });
-    voice({ type: 'square', from: 150, to: 88, dur: 0.16, gain: 0.16 });
-    bell({ freq: 196, dur: 0.7, gain: 0.11, start: 0.04 });
+    noise({ dur: 0.07, gain: 0.45, freq: 900, type: 'lowpass' });
+    voice({ type: 'square', from: 320, to: 150, dur: 0.17, gain: 0.26 });
+    bell({ freq: 392, dur: 0.75, gain: 0.26, start: 0.04 });
   },
 
   /** The moment stakes are counted. A low council-chamber swell. */
@@ -161,93 +224,127 @@ const RECIPES = {
    * unsatisfying, so a stalemate never feels like progress.
    */
   noMove() {
-    bell({ freq: 146.8, dur: 0.9, gain: 0.15 });
-    bell({ freq: 155.6, dur: 0.85, gain: 0.13, start: 0.02 });
-    noise({ dur: 0.3, gain: 0.05, freq: 300 });
+    bell({ freq: 293.7, dur: 0.95, gain: 0.3 });
+    bell({ freq: 311.1, dur: 0.9, gain: 0.27, start: 0.02 });
+    noise({ dur: 0.3, gain: 0.1, freq: 400 });
   },
 
   /** The queen is moving. A rising open fifth: the tug succeeded. */
   moveStart() {
-    bell({ freq: 261.6, dur: 0.5, gain: 0.16 });
-    bell({ freq: 392.0, dur: 0.6, gain: 0.14, start: 0.09 });
+    bell({ freq: 392.0, dur: 0.5, gain: 0.3 });
+    bell({ freq: 587.3, dur: 0.6, gain: 0.28, start: 0.09 });
   },
 
   /** One measured footfall on stone. */
   step(i = 0) {
     const base = 320 + (i % 3) * 22;
-    voice({ type: 'sine', from: base, to: base * 0.86, dur: 0.13, gain: 0.13 });
-    noise({ dur: 0.06, gain: 0.06, freq: 900, type: 'bandpass', q: 1.5 });
+    voice({ type: 'triangle', from: base, to: base * 0.86, dur: 0.14, gain: 0.26 });
+    noise({ dur: 0.07, gain: 0.16, freq: 1400, type: 'bandpass', q: 1.5 });
   },
 
   /** The queen arriving after a successful pull. */
   moveEnd() {
-    bell({ freq: 523.3, dur: 0.7, gain: 0.15 });
-    bell({ freq: 659.3, dur: 0.8, gain: 0.11, start: 0.06 });
+    bell({ freq: 659.3, dur: 0.7, gain: 0.3 });
+    bell({ freq: 987.8, dur: 0.85, gain: 0.24, start: 0.07 });
   },
 
   /** Stone against stone: the boundary. */
   wall() {
-    noise({ dur: 0.45, gain: 0.4, freq: 190, type: 'lowpass' });
-    voice({ type: 'square', from: 96, to: 48, dur: 0.34, gain: 0.17 });
-    bell({ freq: 110, dur: 0.5, gain: 0.09, start: 0.03 });
+    noise({ dur: 0.45, gain: 0.55, freq: 600, type: 'lowpass' });
+    voice({ type: 'square', from: 220, to: 90, dur: 0.34, gain: 0.3 });
+    bell({ freq: 220, dur: 0.5, gain: 0.2, start: 0.03 });
   },
 
   /** Treasure claimed. A bright cascade over a held root. */
   bonus() {
-    [523.3, 659.3, 784.0, 1046.5].forEach((f, i) => chink({ freq: f * 2, start: i * 0.07, gain: 0.16 }));
-    bell({ freq: 523.3, dur: 1.2, gain: 0.16, start: 0.05 });
-    bell({ freq: 784.0, dur: 1.0, gain: 0.12, start: 0.22 });
+    [523.3, 659.3, 784.0, 1046.5].forEach((f, i) => chink({ freq: f * 2, start: i * 0.07, gain: 0.26 }));
+    bell({ freq: 523.3, dur: 1.2, gain: 0.3, start: 0.05 });
+    bell({ freq: 784.0, dur: 1.0, gain: 0.24, start: 0.22 });
   },
 
   /** A rival commits. Barely there on purpose. */
   rivalLock() {
-    voice({ type: 'sine', from: 220, to: 200, dur: 0.07, gain: 0.05 });
+    voice({ type: 'triangle', from: 440, to: 400, dur: 0.08, gain: 0.12 });
   },
 
   /** Final seconds. A courtroom clock. */
   tick() {
-    noise({ dur: 0.03, gain: 0.09, freq: 2600, type: 'bandpass', q: 6 });
+    noise({ dur: 0.045, gain: 0.34, freq: 2400, type: 'bandpass', q: 4 });
+    voice({ type: 'square', from: 1400, to: 1200, dur: 0.05, gain: 0.16 });
   },
 
   /** A new round opens. */
   roundStart() {
-    bell({ freq: 392.0, dur: 0.5, gain: 0.1 });
+    bell({ freq: 523.3, dur: 0.45, gain: 0.22 });
   },
 
   /** The game begins. A short fanfare on an open fifth. */
   gameStart() {
-    bell({ freq: 261.6, dur: 0.9, gain: 0.17 });
-    bell({ freq: 392.0, dur: 0.9, gain: 0.15, start: 0.13 });
-    bell({ freq: 523.3, dur: 1.4, gain: 0.16, start: 0.26 });
+    bell({ freq: 392.0, dur: 0.9, gain: 0.32 });
+    bell({ freq: 523.3, dur: 0.9, gain: 0.3, start: 0.13 });
+    bell({ freq: 784.0, dur: 1.5, gain: 0.3, start: 0.26 });
   },
 
   /** Victory. A full major cadence with a low bell under it. */
   victory() {
-    [523.3, 659.3, 784.0, 1046.5].forEach((f, i) =>
-      bell({ freq: f, dur: 1.5, gain: 0.19, start: i * 0.16 })
+    // Rising fanfare, then a held major chord with a bright cascade over it.
+    [392.0, 523.3, 659.3, 784.0].forEach((f, i) =>
+      bell({ freq: f, dur: 0.7, gain: 0.34, start: i * 0.13 })
     );
-    bell({ freq: 130.8, dur: 2.4, gain: 0.14, start: 0.5 });
-    bell({ freq: 196.0, dur: 2.2, gain: 0.1, start: 0.55 });
+    [523.3, 659.3, 784.0, 1046.5].forEach((f) =>
+      bell({ freq: f, dur: 2.6, gain: 0.3, start: 0.56 })
+    );
+    [1046.5, 1318.5, 1568.0, 2093.0].forEach((f, i) =>
+      chink({ freq: f, start: 0.62 + i * 0.09, gain: 0.24 })
+    );
+    voice({ type: 'triangle', from: 261.6, to: 261.6, start: 0.56, dur: 2.8, gain: 0.22 });
   },
 
   /** A player took a seat. */
   join() {
-    bell({ freq: 440, dur: 0.5, gain: 0.13 });
-    bell({ freq: 660, dur: 0.6, gain: 0.1, start: 0.08 });
+    bell({ freq: 587.3, dur: 0.5, gain: 0.28 });
+    bell({ freq: 880, dur: 0.6, gain: 0.24, start: 0.08 });
   },
 
   /** Interface press. */
   press() {
-    voice({ type: 'sine', from: 330, to: 392, dur: 0.07, gain: 0.1 });
+    voice({ type: 'triangle', from: 523, to: 659, dur: 0.08, gain: 0.18 });
   },
 
   /** Rejected. */
   deny() {
-    voice({ type: 'square', from: 160, to: 112, dur: 0.17, gain: 0.13 });
+    voice({ type: 'square', from: 320, to: 190, dur: 0.18, gain: 0.24 });
   },
 };
 
 export const sound = {
+  /** Start the looping title theme. Safe to call repeatedly. */
+  startTheme() {
+    if (audio.muted || themePlaying) return;
+    if (!ensureContext()) return;
+    themePlaying = true;
+    const loop = () => {
+      if (!themePlaying || audio.muted) return;
+      try {
+        scheduleTheme(0.05);
+      } catch {
+        /* never let music break the page */
+      }
+      themeTimer = setTimeout(loop, THEME_BEATS * BEAT * 1000);
+    };
+    loop();
+  },
+
+  stopTheme() {
+    themePlaying = false;
+    if (themeTimer) clearTimeout(themeTimer);
+    themeTimer = null;
+  },
+
+  isThemePlaying() {
+    return themePlaying;
+  },
+
   /** Call from any user gesture. Safe and cheap to call repeatedly. */
   unlock() {
     return !!ensureContext();
@@ -277,6 +374,7 @@ export const sound = {
 
   setMuted(value) {
     audio.muted = !!value;
+    if (audio.muted) this.stopTheme();
     try {
       localStorage.setItem(SOUND_STORAGE_KEY, audio.muted ? '1' : '0');
     } catch {

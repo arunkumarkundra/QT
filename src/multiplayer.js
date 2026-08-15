@@ -136,9 +136,14 @@ export function attachHostToRoom({ net, host, onLobbyChange }) {
     onLobbyChange?.(lobbySnapshot());
   }
 
-  /** Push each remote seat its own private view. Never broadcast a view. */
+  /**
+   * Push each remote seat its own private view. Never broadcast a view.
+   * Nothing is sent until the host actually starts, so a joiner stays on the
+   * lobby screen instead of being dropped onto a board that is not live.
+   */
   function pushViews() {
     const summary = host.getPublicSummary();
+    if (summary.status !== 'PLAYING' && summary.status !== 'FINISHED') return;
     const presenting = host.isPresenting();
     const lastResolution = host.getLastResolution();
     let reveal = null;

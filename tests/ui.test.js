@@ -86,9 +86,9 @@ const click = (sel) => {
 /** Return the board to an empty placement, whatever a previous test left. */
 function clearCoins() {
   for (let i = 0; i < 60; i++) {
-    const undo = $('#btn-undo');
-    if (!undo || undo.disabled) break;
-    click(undo);
+    const staked = $('#board-cells .cell.staked');
+    if (!staked) break;
+    staked.dispatchEvent(new window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
   }
 }
 
@@ -117,8 +117,9 @@ await test('The start screen carries the logo, seats, code, link and controls', 
   assert($('.title-art'), 'Logo missing from the start screen');
   eq($$('#room-seats .seat-chip').length, 4, 'Expected four seats');
   assert(/^QT-[A-Z0-9]{6}$/.test($('#room-code').textContent), 'Malformed game code');
-  assert($('#room-link').textContent.includes('?game=QT-'), 'Join link missing');
   assert($('#btn-room-copy'), 'Copy-link button missing');
+  assert($('#btn-room-invite'), 'Invite button missing');
+  assert($('#btn-room-newboard'), 'New-board button missing');
   assert(!$('#btn-room-start').hidden, 'Start button missing');
   assert($('#btn-join'), 'Join-with-code missing');
   assert($('#btn-sound-title').innerHTML.trim(), 'Sound icon not rendered');
@@ -130,6 +131,22 @@ await test('One seat is you; the rest wait as computer players', () => {
   const chips = $$('#room-seats .seat-chip');
   eq(chips.filter((c) => c.dataset.kind === 'human').length, 1);
   eq(chips.filter((c) => c.classList.contains('waiting')).length, 3);
+});
+
+await test('The start screen has no long link box to overflow small screens', () => {
+  assert(!$('#room-link'), 'The full link is still rendered');
+  assert(!$('.invite-row'), 'The link row survived');
+});
+
+await test('A favicon is declared', () => {
+  const icon = doc.querySelector('link[rel="icon"]');
+  assert(icon && icon.getAttribute('href').startsWith('data:image/svg+xml'), 'No inline favicon');
+});
+
+await test('Changing the board issues a new code', () => {
+  const before = $('#room-code').textContent;
+  click('#btn-room-newboard');
+  assert($('#room-code').textContent !== before, 'New board did not change the code');
 });
 
 await test('Starting the game opens the board', () => {
@@ -183,7 +200,12 @@ await test('Clicking a cell drops a visible coin, not an empty box', () => {
   eq($('#board-cells .cell.staked .count').textContent, '1', 'Coin count wrong');
   const disc = $('#board-cells .cell.staked .disc');
   assert(disc && disc.innerHTML.includes('<svg'), 'The coin disc is empty — no coin artwork');
-  assert(!$('#btn-undo').disabled, 'Undo should become available');
+  assert($('#board-cells .cell.staked .count'), 'Coin count badge missing');
+});
+
+await test('The coin balance carries no undo control', () => {
+  assert(!$('#btn-undo'), 'The undo button survived');
+  assert(!$('.purse .undo'), 'An undo control is still in the purse');
 });
 
 await test('The treasure stack is drawn from equal-sized coins', () => {
@@ -198,20 +220,38 @@ await test('Sound is actually produced, not silently swallowed', () => {
   const before = window.__audioNodes;
   click($('#board-cells .cell.target'));
   assert(window.__audioNodes > before, 'Placing a coin produced no audio nodes');
-  click('#btn-undo');
+  clearCoins();
+});
+
+await test('Every game sound produces audio, including timer and victory', () => {
+  // Guards against the class of bug where a recipe throws and the catch
+  // silently swallows it, leaving the game mute.
+  const names = ['tick', 'lock', 'step', 'noMove', 'moveStart', 'moveEnd', 'wall', 'victory', 'bonus', 'gameStart'];
+  for (const n of names) {
+    const before = window.__audioNodes;
+    window.__qtSound.play(n, 1);
+    assert(window.__audioNodes > before, `Sound "${n}" produced nothing`);
+  }
 });
 
 await test('Coins accumulate one per click', () => {
+  clearCoins();
   const target = $(`#board-cells .cell[data-dir="${firstDir}"]`);
+  click(target);
   click(target);
   click(target);
   eq($('#board-cells .cell.staked .count').textContent, '3');
 });
 
 await test('Clicking the opposite cell takes coins back instead of paying both ways', () => {
+  clearCoins();
   const opp = { UP: 'DOWN', DOWN: 'UP', LEFT: 'RIGHT', RIGHT: 'LEFT' }[firstDir];
   const oppCell = $(`#board-cells .cell[data-dir="${opp}"]`);
   if (!oppCell) return; // queen against a wall this game
+  const target = $(`#board-cells .cell[data-dir="${firstDir}"]`);
+  click(target);
+  click(target);
+  click(target);
   click(oppCell);
   eq($('#board-cells .cell.staked .count').textContent, '2', 'Opposite click did not remove a coin');
   eq($$('#board-cells .cell.staked').length, 1, 'Coins were placed in both directions at once');
@@ -228,11 +268,12 @@ await test('Undo takes a coin back even when the queen is against a wall', () =>
   click(target);
   click(target);
   eq($('#board-cells .cell.staked .count').textContent, '2');
-  click('#btn-undo');
-  eq($('#board-cells .cell.staked .count').textContent, '1', 'Undo did not remove a coin');
-  click('#btn-undo');
-  eq($$('#board-cells .cell.staked').length, 0, 'Undo did not clear the last coin');
-  assert($('#btn-undo').disabled, 'Undo should disable when nothing is staked');
+  // Right-click on the stack is the wall-safe removal gesture.
+  const menu = new window.MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+  target.dispatchEvent(menu);
+  eq($('#board-cells .cell.staked .count').textContent, '1', 'Right-click did not remove a coin');
+  target.dispatchEvent(new window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+  eq($$('#board-cells .cell.staked').length, 0, 'Right-click did not clear the last coin');
 });
 
 await test('Every direction beside the queen accepts and releases coins', () => {
@@ -242,7 +283,7 @@ await test('Every direction beside the queen accepts and releases coins', () => 
     click(cell);
     const stack = $(`#board-cells .cell[data-dir="${dir}"] .count`);
     assert(stack && stack.textContent === '1', `Direction ${dir} would not accept a coin`);
-    click('#btn-undo');
+    cell.dispatchEvent(new window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
     assert(!$(`#board-cells .cell[data-dir="${dir}"] .count`), `Direction ${dir} would not release its coin`);
   }
 });

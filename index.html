@@ -6,6 +6,8 @@
 <title>Queen's Tug</title>
 <meta name="description" content="Four hidden castles. One wandering queen. Bid in secret to tug her onto your castle.">
 <meta name="theme-color" content="#070a0f">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230d1119'/%3E%3Cpath d='M12 22 8 8l13 8 11-13 11 13 13-8-4 14a7 7 0 0 1-2 4l-2 8H16l-2-8a7 7 0 0 1-2-4z' fill='%23f2d492' stroke='%235c4416' stroke-width='2' stroke-linejoin='round'/%3E%3Crect x='17' y='40' width='30' height='5' rx='2' fill='%23f2d492' stroke='%235c4416' stroke-width='2'/%3E%3Cpath d='M20 47h24l3 9H17z' fill='%23f2d492' stroke='%235c4416' stroke-width='2' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="apple-touch-icon" href="./assets/logo.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;900&family=Spectral:wght@300;400;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
@@ -17,31 +19,29 @@
 
   <!-- ======================= TITLE ======================= -->
   <section id="screen-title" class="screen title-screen">
+
+    <div class="floating-bar">
+      <button class="icon-btn" id="btn-sound-title" aria-label="Toggle sound"></button>
+      <button class="icon-btn" id="btn-rules" aria-label="How to play"></button>
+      <button class="icon-btn" id="btn-leave-room" aria-label="Leave this game" hidden></button>
+    </div>
+
     <div class="title-inner">
-
-      <div class="bar title-bar">
-        <span class="bar-spacer"></span>
-        <button class="icon-btn" id="btn-sound-title" aria-label="Toggle sound"></button>
-        <button class="icon-btn" id="btn-rules" aria-label="How to play"></button>
-      </div>
-
       <img class="title-art" src="./assets/logo.webp" alt="Queen's Tug — four hidden castles, one wandering queen, every move is a secret battle">
 
-      <div class="lobby">
-        <div class="room-seats" id="room-seats"></div>
-        <p class="room-status" id="room-status">Empty seats are played by the computer.</p>
+      <div class="room-seats" id="room-seats"></div>
+      <p class="room-status" id="room-status">Empty seats are played by the computer.</p>
 
-        <div class="code-block">
-          <button class="code-value" id="room-code" title="Click to copy the code">QT-000000</button>
-          <div class="invite-row">
-            <span class="invite-url num" id="room-link"></span>
-            <button class="btn btn-ghost btn-sm" id="btn-room-copy">Copy link</button>
-          </div>
-        </div>
+      <button class="code-value" id="room-code" title="Tap to copy the game code">QT-000000</button>
 
-        <button class="btn btn-gold btn-lg" id="btn-room-start">Start the game</button>
-        <button class="btn btn-ghost" id="btn-join">Join with a code</button>
+      <div class="room-actions">
+        <button class="btn btn-sm" id="btn-room-copy">Copy link</button>
+        <button class="btn btn-sm" id="btn-room-invite">Invite</button>
+        <button class="btn btn-sm" id="btn-room-newboard">New board</button>
       </div>
+
+      <button class="btn btn-gold btn-lg" id="btn-room-start">Start the game</button>
+      <button class="btn btn-ghost" id="btn-join">Join with a code</button>
     </div>
   </section>
 
@@ -61,7 +61,6 @@
         <div class="purse" id="purse">
           <span class="coin-icon" id="coin-icon"></span>
           <span class="value num" id="purse-value">50</span>
-          <button class="undo" id="btn-undo" aria-label="Take back a coin" disabled></button>
         </div>
         <div class="seat-group" id="seat-chips"></div>
         <div class="timer" id="timer">
