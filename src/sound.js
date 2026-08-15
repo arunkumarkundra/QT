@@ -15,6 +15,8 @@ const audio = {
   muted: false,
   ready: false,
   kicked: false,
+  themeBus: null,
+  pending: [],
 };
 
 /**
@@ -36,6 +38,11 @@ function ensureContext() {
     audio.master = audio.ctx.createGain();
     audio.master.gain.value = 0.55;
     audio.master.connect(audio.ctx.destination);
+    // Music gets its own bus. Muting has to silence notes that were already
+    // scheduled, which is only possible if they share a gain node.
+    audio.themeBus = audio.ctx.createGain();
+    audio.themeBus.gain.value = 1;
+    audio.themeBus.connect(audio.master);
     audio.ready = true;
   }
 
@@ -45,6 +52,19 @@ function ensureContext() {
       if (resumed && typeof resumed.catch === 'function') resumed.catch(() => {});
     } catch {
       /* nothing more we can do */
+    }
+  }
+
+  // Anything scheduled while the context was asleep is lost, so hold sounds
+  // back until the hardware is genuinely running and replay them on wake.
+  if (audio.ctx.state === 'running' && audio.pending.length) {
+    const queued = audio.pending.splice(0, audio.pending.length);
+    for (const [name, args] of queued) {
+      try {
+        RECIPES[name]?.(...args);
+      } catch {
+        /* ignore */
+      }
     }
   }
 
@@ -65,7 +85,7 @@ function ensureContext() {
 }
 
 /** One shaped oscillator voice. */
-function voice({ type = 'sine', from, to, start = 0, dur = 0.2, gain = 0.3, curve = 'exp' }) {
+function voice({ type = 'sine', from, to, start = 0, dur = 0.2, gain = 0.3, curve = 'exp', dest = null }) {
   const ctx = audio.ctx;
   const t0 = ctx.currentTime + start;
   const osc = ctx.createOscillator();
@@ -80,13 +100,13 @@ function voice({ type = 'sine', from, to, start = 0, dur = 0.2, gain = 0.3, curv
   g.gain.exponentialRampToValueAtTime(gain, t0 + Math.min(0.02, dur * 0.2));
   g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
   osc.connect(g);
-  g.connect(audio.master);
+  g.connect(dest || audio.master);
   osc.start(t0);
   osc.stop(t0 + dur + 0.03);
 }
 
 /** Filtered noise burst, for thuds and impacts. */
-function noise({ start = 0, dur = 0.25, gain = 0.3, freq = 900, q = 1, type = 'lowpass' }) {
+function noise({ start = 0, dur = 0.25, gain = 0.3, freq = 900, q = 1, type = 'lowpass', dest = null }) {
   const ctx = audio.ctx;
   const t0 = ctx.currentTime + start;
   const frames = Math.max(1, Math.floor(ctx.sampleRate * dur));
@@ -104,7 +124,7 @@ function noise({ start = 0, dur = 0.25, gain = 0.3, freq = 900, q = 1, type = 'l
   g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
   src.connect(filter);
   filter.connect(g);
-  g.connect(audio.master);
+  g.connect(dest || audio.master);
   src.start(t0);
   src.stop(t0 + dur + 0.02);
 }
@@ -115,12 +135,12 @@ function noise({ start = 0, dur = 0.25, gain = 0.3, freq = 900, q = 1, type = 'l
  * laptop speakers, which reproduce almost nothing below ~200 Hz, so they are
  * mixed deliberately loud relative to the fundamental.
  */
-function bell({ freq, start = 0, dur = 1.1, gain = 0.34, detune = 1.004 }) {
-  voice({ type: 'triangle', from: freq, to: freq, start, dur, gain });
-  voice({ type: 'sine', from: freq * detune, to: freq * detune, start, dur: dur * 0.9, gain: gain * 0.6 });
-  voice({ type: 'sine', from: freq * 2.01, to: freq * 2.01, start, dur: dur * 0.5, gain: gain * 0.5 });
-  voice({ type: 'sine', from: freq * 2.98, to: freq * 2.98, start, dur: dur * 0.3, gain: gain * 0.3 });
-  voice({ type: 'sine', from: freq * 4.02, to: freq * 4.02, start, dur: dur * 0.16, gain: gain * 0.16 });
+function bell({ freq, start = 0, dur = 1.1, gain = 0.34, detune = 1.004, dest = null }) {
+  voice({ type: 'triangle', from: freq, to: freq, start, dur, gain, dest });
+  voice({ type: 'sine', from: freq * detune, to: freq * detune, start, dur: dur * 0.9, gain: gain * 0.6, dest });
+  voice({ type: 'sine', from: freq * 2.01, to: freq * 2.01, start, dur: dur * 0.5, gain: gain * 0.5, dest });
+  voice({ type: 'sine', from: freq * 2.98, to: freq * 2.98, start, dur: dur * 0.3, gain: gain * 0.3, dest });
+  voice({ type: 'sine', from: freq * 4.02, to: freq * 4.02, start, dur: dur * 0.16, gain: gain * 0.16, dest });
 }
 
 /** Metal-on-metal chink, for coins. */
@@ -173,18 +193,48 @@ const THEME_BEATS = 16;
 
 let themeTimer = null;
 let themePlaying = false;
+let themeStartedAt = 0;
 
-function scheduleTheme(offset = 0) {
-  for (const [beat, freq, len, gain] of THEME_MELODY) {
-    bell({ freq, start: offset + beat * BEAT, dur: len * BEAT * 1.5, gain: gain * 0.7 });
+/** Flatten the three parts into one time-ordered list of notes. */
+const THEME_NOTES = [
+  ...THEME_MELODY.map(([b, f, l, g]) => ({ b, f, l: l * 1.5, g: g * 0.7, kind: 'bell' })),
+  ...THEME_BASS.map(([b, f, l, g]) => ({ b, f, l, g, kind: 'bass' })),
+  ...THEME_CHIME.map(([b, f, l, g]) => ({ b, f, l: l * 2, g, kind: 'bell' })),
+].sort((x, y) => x.b - y.b);
+
+/**
+ * Schedule only the notes falling inside a short lookahead window, then come
+ * back for more. Scheduling the whole loop at once was why muting the music
+ * had no effect until the phrase finished — the notes were already committed.
+ */
+function themeTick() {
+  if (!themePlaying || audio.muted || !audio.ctx) return;
+  const ctx = audio.ctx;
+  const LOOKAHEAD = 0.55;
+  const loopLen = THEME_BEATS * BEAT;
+
+  const from = ctx.currentTime - themeStartedAt;
+  const to = from + LOOKAHEAD;
+
+  for (const n of THEME_NOTES) {
+    for (let loop = 0; loop < 3; loop++) {
+      const at = n.b * BEAT + loop * loopLen;
+      if (at < from || at >= to) continue;
+      const start = themeStartedAt + at - ctx.currentTime;
+      if (start < 0) continue;
+      if (n.kind === 'bell') {
+        bell({ freq: n.f, start, dur: n.l * BEAT, gain: n.g, dest: audio.themeBus });
+      } else {
+        voice({ type: 'triangle', from: n.f, to: n.f, start, dur: n.l * BEAT, gain: n.g, dest: audio.themeBus });
+        voice({ type: 'sine', from: n.f * 2, to: n.f * 2, start, dur: n.l * BEAT * 0.7, gain: n.g * 0.5, dest: audio.themeBus });
+      }
+    }
   }
-  for (const [beat, freq, len, gain] of THEME_BASS) {
-    voice({ type: 'triangle', from: freq, to: freq, start: offset + beat * BEAT, dur: len * BEAT, gain });
-    voice({ type: 'sine', from: freq * 2, to: freq * 2, start: offset + beat * BEAT, dur: len * BEAT * 0.7, gain: gain * 0.5 });
-  }
-  for (const [beat, freq, len, gain] of THEME_CHIME) {
-    bell({ freq, start: offset + beat * BEAT, dur: len * BEAT * 2, gain });
-  }
+
+  // Roll the clock back a loop so the phrase repeats seamlessly.
+  if (from > loopLen) themeStartedAt += loopLen;
+
+  themeTimer = setTimeout(themeTick, 220);
 }
 
 const RECIPES = {
@@ -321,24 +371,39 @@ export const sound = {
   /** Start the looping title theme. Safe to call repeatedly. */
   startTheme() {
     if (audio.muted || themePlaying) return;
-    if (!ensureContext()) return;
+    const ctx = ensureContext();
+    if (!ctx) return;
+    // Wait for the hardware; a theme scheduled against a sleeping context is
+    // simply thrown away.
+    if (ctx.state !== 'running') return;
     themePlaying = true;
-    const loop = () => {
-      if (!themePlaying || audio.muted) return;
-      try {
-        scheduleTheme(0.05);
-      } catch {
-        /* never let music break the page */
-      }
-      themeTimer = setTimeout(loop, THEME_BEATS * BEAT * 1000);
-    };
-    loop();
+    themeStartedAt = ctx.currentTime + 0.12;
+    if (audio.themeBus) audio.themeBus.gain.setValueAtTime(1, ctx.currentTime);
+    themeTick();
   },
 
+  /** Silences the music immediately, including notes already scheduled. */
   stopTheme() {
     themePlaying = false;
     if (themeTimer) clearTimeout(themeTimer);
     themeTimer = null;
+    if (audio.themeBus && audio.ctx) {
+      try {
+        const now = audio.ctx.currentTime;
+        const g = audio.themeBus.gain;
+        g.cancelScheduledValues?.(now);
+        g.setValueAtTime(g.value, now);
+        g.linearRampToValueAtTime(0.0001, now + 0.06);
+      } catch {
+        // Older engines lack some AutomationRate methods; fall back to a
+        // hard cut, which is still better than letting the phrase play out.
+        try {
+          audio.themeBus.gain.value = 0.0001;
+        } catch {
+          /* give up silently */
+        }
+      }
+    }
   },
 
   isThemePlaying() {
@@ -361,10 +426,15 @@ export const sound = {
     if (!ctx) return;
     const recipe = RECIPES[name];
     if (!recipe) return;
+    // Not awake yet: hold it and fire once the context reports running.
+    if (ctx.state !== 'running') {
+      if (audio.pending.length < 12) audio.pending.push([name, args]);
+      return;
+    }
     try {
       recipe(...args);
-    } catch {
-      /* audio must never break gameplay */
+    } catch (err) {
+      if (typeof console !== 'undefined') console.warn('sound failed:', name, err);
     }
   },
 

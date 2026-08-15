@@ -36,12 +36,17 @@
 
       <div class="room-actions">
         <button class="btn btn-sm" id="btn-room-copy">Copy link</button>
-        <button class="btn btn-sm" id="btn-room-invite">Invite</button>
-        <button class="btn btn-sm" id="btn-room-newboard">New board</button>
+        <button class="btn btn-sm" id="btn-room-invite">Invite others</button>
       </div>
+
+      <label class="humans-only" id="humans-only-row">
+        <input type="checkbox" id="chk-humans-only">
+        <span>Play with humans only</span>
+      </label>
 
       <button class="btn btn-gold btn-lg" id="btn-room-start">Start the game</button>
       <button class="btn btn-ghost" id="btn-join">Join with a code</button>
+      <button class="btn btn-ghost" id="btn-room-newboard">Start a new board</button>
     </div>
   </section>
 
@@ -150,33 +155,61 @@
 <div class="modal" id="modal-rules" hidden>
   <div class="modal-card">
     <div class="modal-head">
-      <h2>How to play</h2>
+      <h2>Queen's Tug</h2>
       <button class="icon-btn" data-close aria-label="Close">✕</button>
     </div>
-    <p>Four players share one queen. Each of you owns a castle only you can see. Get the queen to <em>land</em> on yours and you win instantly.</p>
 
-    <h4>Every round</h4>
-    <p>Drop coins on the cells around the queen. Everyone does this in secret, at the same time. Then the coins are counted up by direction.</p>
+    <p class="lede-quote">Four hidden castles. One wandering queen. Every move is a secret battle.</p>
 
-    <h4>Opposite sides cancel</h4>
+    <p>The queen is wandering the realm. Four castles are hidden across the board — one belongs to each player. You can see yours. Nobody can see anyone else's.</p>
+    <p><strong>Your job is simple: lure the queen onto your castle.</strong> But you do not control her alone.</p>
+
+    <h4>Pull the queen</h4>
+    <p>Each round, place your coins on the four cells beside her — up, down, left, right. You may pile several coins in one direction, split them between directions, or place nothing at all.</p>
+    <p>Every bid is secret, and everyone places at the same time. When you are ready, lock your bid.</p>
+
+    <h4>Opposing pulls cancel</h4>
     <div class="rule-demo">
       Up <span class="num">3</span> against Down <span class="num">2</span> leaves Up <span class="num">1</span>.<br>
-      Right <span class="num">2</span> is unopposed.<br>
-      Right is stronger, so the queen slides <span class="num">2</span> cells right.
+      Right has <span class="num">2</span>, so Right is stronger.<br>
+      The queen moves <span class="num">2</span> cells right.
     </div>
-    <p>Equal strength on both axes means she stays put — and the coins are spent anyway. Betting nothing is always allowed.</p>
+    <p>If the strongest directions are tied, she stays where she is. Your coins are spent whether they win, cancel, or move nothing.</p>
 
-    <h4>Landing is everything</h4>
-    <p>She must <em>finish</em> her slide on your castle. Gliding over it does nothing. Same for the treasure stacks.</p>
+    <h4>Land on your castle</h4>
+    <p>The queen must <em>finish</em> her move on your castle. Passing over it does not count. Land there and you win immediately — and only then does anyone see where the other castles were.</p>
 
-    <h4>Treasure</h4>
-    <p>You always have one secret treasure stack only you can see. Land on it to bank the coins. It shrinks by one for every cell the queen travels, so the longer you take, the less it is worth.</p>
+    <h4>Secret treasures</h4>
+    <p>There is also a secret treasure on your board that only you can see. It holds extra coins, but it loses coins every time the queen moves: the longer you wait, the less it is worth.</p>
+    <p>Land exactly on it and you collect whatever is left. Once claimed — or once it reaches zero — a new one appears elsewhere. So every treasure poses the same question: <em>chase the castle, or chase the coins?</em></p>
 
-    <h4>Coins</h4>
-    <p>Coins are gone whether they win or cancel. Everyone is refilled only when <em>all four</em> players are empty.</p>
+    <h4>What the others can see</h4>
+    <p>They see the queen, the board, and which way she moved. They see their own castle and their own treasure. They do not see your castle, your bids, your coin balance or your treasure — and you do not see theirs.</p>
+    <p class="aside">You may know where the queen went. You will have to guess why.</p>
 
-    <h4>What stays secret</h4>
-    <p>Other castles, other treasure, other balances, and who bet what. You are told which way the queen went, never who pushed her.</p>
+    <h4>The walls</h4>
+    <p>The queen cannot leave the board. If a move asks her to travel farther than the board allows, she stops at the wall and the extra movement is lost.</p>
+
+    <h4>Make your move</h4>
+    <p>You have twenty seconds to place coins and lock your bid. If you do not lock in time, whatever you have placed is submitted for you. With no coins, simply pass.</p>
+
+    <h4>If a player leaves</h4>
+    <p>If someone disconnects, one of the court's bots takes their seat. The bot knows only what that player could see. When the player returns, their seat can return to them.</p>
+
+    <h4>The final reveal</h4>
+    <p>During the game the hidden castles stay hidden. When someone wins, the secrets come out: all four castles, the queen's complete journey, the treasures that appeared, and who reached their castle.</p>
+    <p class="aside">The queen's journey is the story of the game.</p>
+
+    <h4>Controls</h4>
+    <ul>
+      <li>Tap a glowing cell to stake a coin toward that direction.</li>
+      <li>Tap the opposite cell to take a coin back.</li>
+      <li>Long-press or right-click a stack to remove a coin when there is no opposite cell.</li>
+      <li>Tap the queen to lock your bid — with nothing staked, that passes the round.</li>
+      <li>Arrow keys stake, Backspace removes, Enter locks.</li>
+    </ul>
+
+    <p class="sign-off">Hide your castle. Spend your coins wisely. And pull the queen your way.</p>
   </div>
 </div>
 

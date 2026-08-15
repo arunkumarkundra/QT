@@ -152,6 +152,9 @@ const app = {
   /** Bumped whenever a game is mounted or torn down; in-flight animations
    *  belonging to an older generation abandon themselves. */
   epoch: 0,
+  /** When on, empty seats wait for people instead of being filled by bots. */
+  humansOnly: false,
+  lobby: null,
   code: '',
   animating: false,
   started: false,
@@ -283,6 +286,36 @@ function wrapLocal(host, seat) {
 
 /* ---------------- the start screen doubles as the lobby ---------------- */
 
+/**
+ * Reflect the lobby in copy and in whether Start is allowed. With humans-only
+ * on, a game cannot begin until at least two people are actually here.
+ */
+function refreshLobbyState() {
+  const lobby = app.lobby || soloLobby();
+  const humans = lobby.seats.filter((x) => x.kind === 'human').length;
+  const status = $('#room-status');
+  const start = $('#btn-room-start');
+
+  // Gating always applies, even while an error notice is on screen.
+  start.disabled = app.humansOnly && humans < 2;
+
+  // An error notice outranks the routine status line.
+  if (!status.classList.contains('error')) {
+    if (app.humansOnly) {
+      status.textContent =
+        humans < 2
+          ? 'Waiting for at least one more player to join.'
+          : `${humans} players ready. Start when you are.`;
+    } else {
+      status.textContent =
+        humans === 1
+          ? "Share the code. Empty seats are filled by the court's bots."
+          : `${humans} players ready. Start when you are.`;
+    }
+  }
+  renderRoomSeats(lobby, 0);
+}
+
 function renderRoomSeats(lobby, mySeat = 0) {
   const box = $('#room-seats');
   const previous = new Set([...box.children].map((c) => c.dataset.kind + c.dataset.seat));
@@ -292,14 +325,22 @@ function renderRoomSeats(lobby, mySeat = 0) {
     chip.style.setProperty('--seat', SEAT_COLORS[s.seat]);
     chip.dataset.seat = s.seat;
     chip.dataset.kind = s.kind;
-    chip.appendChild(el('span', 'avatar', s.kind === 'human' ? ART.human : ART.bot));
-    if (s.kind === 'human') {
+    const open = s.kind !== 'human';
+    // In humans-only mode an empty seat is a person who has not arrived yet,
+    // so it shows a human outline rather than a bot.
+    chip.appendChild(el('span', 'avatar', open && !app.humansOnly ? ART.bot : ART.human));
+    if (!open) {
       if (!previous.has('human' + s.seat)) chip.classList.add('joined');
     } else {
       chip.classList.add('waiting');
+      if (app.humansOnly) chip.classList.add('open-seat');
     }
     if (s.seat === mySeat) chip.classList.add('is-you');
-    chip.title = s.kind === 'human' ? 'Player' : 'Open seat — the computer will play it';
+    chip.title = !open
+      ? 'Player'
+      : app.humansOnly
+        ? 'Waiting for a player'
+        : "Open seat — one of the court's bots will play it";
     box.appendChild(chip);
   }
 }
@@ -338,12 +379,13 @@ async function prepareHostLobby() {
   showCode(randomCode());
   setLobbyMode('host');
   $('#room-status').classList.remove('error');
-  $('#room-status').textContent = 'Share the code to fill a seat. Empty seats are played by the computer.';
+  app.lobby = soloLobby();
+  refreshLobbyState();
 
   leaveRoom();
   if (app.host) app.host.dispose();
   app.host = newLocalHost(app.code);
-  renderRoomSeats(soloLobby(), 0);
+  refreshLobbyState();
 
   if (!multiplayerSupported()) return;
 
@@ -363,17 +405,13 @@ async function prepareHostLobby() {
       net: app.net,
       host: app.host,
       onLobbyChange: (lobby) => {
-        renderRoomSeats(lobby, 0);
-        const humans = lobby.seats.filter((s) => s.kind === 'human').length;
-        $('#room-status').textContent =
-          humans === 1
-            ? 'Share the code to fill a seat. Empty seats are played by the computer.'
-            : `${humans} players seated. Start whenever you are ready.`;
+        app.lobby = lobby;
+        refreshLobbyState();
       },
     });
   } catch {
     $('#room-status').textContent =
-      'Could not reach the matchmaking relay — you can still play against the computer.';
+      "Online play is unavailable. You can still play against the court's bots.";
     $('#room-status').classList.add('error');
   }
 }
@@ -385,7 +423,7 @@ async function prepareJoinLobby(code) {
   showCode(code);
   setLobbyMode('join');
   $('#room-status').classList.remove('error');
-  $('#room-status').textContent = 'Looking for the game…';
+  $('#room-status').textContent = 'Finding your game…';
   renderRoomSeats({ seats: [0, 1, 2, 3].map((seat) => ({ seat, kind: 'bot' })) }, -1);
 
   leaveRoom();
@@ -397,7 +435,7 @@ async function prepareJoinLobby(code) {
 
     app.net.onLobby((lobby) => {
       renderRoomSeats(lobby, remote.getSeat?.() ?? -1);
-      $('#room-status').textContent = 'Seated — waiting for the host to start the game.';
+      $('#room-status').textContent = "You're in. Waiting for the host…";
       sound.play('join');
     });
 
@@ -409,7 +447,7 @@ async function prepareJoinLobby(code) {
     });
   } catch {
     $('#room-status').textContent =
-      'Could not reach that game. Check the code, or start one of your own.';
+      'Game not found. Check the code or start a new game.';
     $('#room-status').classList.add('error');
     setLobbyMode('host');
   }
@@ -417,6 +455,7 @@ async function prepareJoinLobby(code) {
 
 /** The host presses Start. Anyone seated comes along; empty seats stay AI. */
 function startTheGame() {
+  if ($('#btn-room-start').disabled) return;
   sound.unlock();
   sound.stopTheme();
   sound.play('press');
@@ -529,7 +568,7 @@ function renderMarkers(view) {
   queen.classList.toggle('armed', armed);
   queen.title = armed
     ? view.you.currentBidTotal > 0
-      ? 'Tap the queen to lock in your coins'
+      ? 'Tap the queen to lock your bid'
       : 'Tap the queen to pass this round'
     : '';
 }
@@ -594,18 +633,18 @@ function renderStatus(view) {
   if (view.you.locked) {
     const waiting = view.opponents.filter((o) => !o.locked).length;
     status.innerHTML = waiting
-      ? `Locked in. Waiting for <b>${waiting}</b> ${waiting === 1 ? 'player' : 'players'}…`
-      : 'Counting the coins…';
+      ? `Locked. Waiting for <b>${waiting}</b> ${waiting === 1 ? 'player' : 'players'}…`
+      : 'The queen is listening…';
     return;
   }
   if (view.you.coinsRemaining === 0) {
-    status.innerHTML = 'No coins left. Tap the queen to pass — everyone refills once all four are empty.';
+    status.innerHTML = "You're out of coins. Pass. Everyone refills when all four are empty.";
     return;
   }
   status.innerHTML =
     view.you.currentBidTotal > 0
-      ? 'Tap the queen to lock in your move.'
-      : 'Click a direction to stake coins.';
+      ? 'Tap the queen to lock your bid.'
+      : 'Tap the direction to stake the coins to lure the queen.';
 }
 
 function renderTimer() {
@@ -717,7 +756,7 @@ function stake(dir) {
   }
   if (view.you.currentBidTotal >= view.you.coinsRemaining) {
     sound.play('deny');
-    toast('No coins left to place.', 'bad');
+    toast('No coins left.', 'bad');
     return;
   }
   bid[dir] = (bid[dir] || 0) + 1;
@@ -802,11 +841,11 @@ async function playResolution() {
   if (res.tie) {
     // Deliberately unresolved: a stalemate must never sound like progress.
     sound.play('noMove');
-    status.innerHTML = `<span class="verdict">Forces cancel — the queen holds her ground</span>`;
+    status.innerHTML = `<span class="verdict">The forces cancel. The queen holds her ground.</span>`;
     await wait(UI_TIMING.cancelAnimMs + 500);
   } else {
     sound.play('moveStart');
-    status.innerHTML = `<span class="verdict">The queen is pulled <b>${DIR_WORD[res.direction]}</b></span>`;
+    status.innerHTML = `<span class="verdict">The queen is pulled <b>${DIR_WORD[res.direction]}</b>.</span>`;
     await wait(UI_TIMING.cancelAnimMs);
     await walkQueen(res);
     if (!res.blockedByBoundary) sound.play('moveEnd');
@@ -817,7 +856,7 @@ async function playResolution() {
     const claimed = $('.bonus-mark', $('#board-overlay'));
     if (claimed) claimed.classList.add('claimed');
     sound.play('bonus');
-    toast(`Treasure claimed — ${view.lastResolution.yourBonusCollected.reward} coins`, 'gold');
+    toast(`Treasure claimed: +${view.lastResolution.yourBonusCollected.reward} coins`, 'gold');
     await wait(600);
   }
 
@@ -902,7 +941,8 @@ function showResult() {
   const line = $('#winner-line');
   line.style.setProperty('--seat', SEAT_COLORS[seat]);
   $('#winner-avatar').innerHTML = winnerSeat.controlMode === CONTROL_MODE.HUMAN ? ART.human : ART.bot;
-  $('#winner-text').textContent = seat === app.seat ? 'You win' : 'Wins';
+  $('#winner-text').textContent =
+    seat === app.seat ? 'Your queen has arrived. You win!' : 'Claims the throne!';
 
   // Stats live in the bottom message strip, not in a panel of their own.
   const claimed = reveal.bonusLedger.filter((b) => b.outcome === 'COLLECTED').length;
@@ -968,9 +1008,9 @@ function drawReplayFrame(n, partialSteps = null) {
   if (partialSteps !== null && log[upto]) pts.push(...log[upto].path.slice(0, partialSteps));
   drawTrail(pts, reveal.board);
 
-  const queen = el('div', 'marker queen');
+  const queen = el('div', 'marker queen solid');
   queen.id = 'replay-queen';
-  queen.innerHTML = `<div class="queen-glow"></div>${ART.queen}`;
+  queen.innerHTML = `<div class="queen-glow"></div><div class="queen-plinth"></div>${ART.queen}`;
   placeMarker(queen, pts[pts.length - 1] || reveal.completeQueenPath[0]);
   overlay.appendChild(queen);
 
@@ -1215,6 +1255,10 @@ function boot() {
   $('#btn-room-start').onclick = startTheGame;
   $('#btn-room-copy').onclick = () => copyLink(app.code);
   $('#btn-room-invite').onclick = () => inviteOthers(app.code);
+  $('#chk-humans-only').onchange = (e) => {
+    app.humansOnly = e.target.checked;
+    refreshLobbyState();
+  };
   $('#btn-room-newboard').onclick = () => {
     sound.play('press');
     prepareHostLobby();
@@ -1316,7 +1360,7 @@ async function inviteOthers(code) {
       return;
     }
     await navigator.clipboard.writeText(`${text}\n${url}`);
-    toast('Invitation copied — paste it anywhere.', 'gold');
+    toast('Invite copied. Send it to your crew.', 'gold');
   } catch {
     /* the person dismissed the sheet */
   }
@@ -1327,9 +1371,9 @@ async function copyCode(code) {
   try {
     await navigator.clipboard.writeText(code);
     btn.classList.add('copied');
-    setTimeout(() => btn.classList.remove('copied'), 1200);
+    setTimeout(() => btn.classList.remove('copied'), 1400);
     sound.play('press');
-    toast('Game code copied.', 'gold');
+    toast('Code copied.', 'gold');
   } catch {
     toast(code);
   }
@@ -1338,7 +1382,7 @@ async function copyCode(code) {
 async function copyLink(code) {
   try {
     await navigator.clipboard.writeText(inviteUrl(code));
-    toast('Link copied — send it to your friends.', 'gold');
+    toast('Link copied. Send it to your crew.', 'gold');
   } catch {
     toast(inviteUrl(code));
   }

@@ -50,7 +50,13 @@ const dom = new JSDOM(html, {
     // exercised rather than skipped. Counts every node that gets created.
     w.__audioNodes = 0;
     const P = function () {
-      return { value: 0, setValueAtTime() {}, exponentialRampToValueAtTime() {}, linearRampToValueAtTime() {} };
+      return {
+        value: 0,
+        setValueAtTime() {},
+        exponentialRampToValueAtTime() {},
+        linearRampToValueAtTime() {},
+        cancelScheduledValues() {},
+      };
     };
     const N = function () {
       w.__audioNodes++;
@@ -120,6 +126,9 @@ await test('The start screen carries the logo, seats, code, link and controls', 
   assert($('#btn-room-copy'), 'Copy-link button missing');
   assert($('#btn-room-invite'), 'Invite button missing');
   assert($('#btn-room-newboard'), 'New-board button missing');
+  eq($('#btn-room-invite').textContent, 'Invite others');
+  eq($('#btn-room-newboard').textContent, 'Start a new board');
+  assert($('#chk-humans-only'), 'Humans-only toggle missing');
   assert(!$('#btn-room-start').hidden, 'Start button missing');
   assert($('#btn-join'), 'Join-with-code missing');
   assert($('#btn-sound-title').innerHTML.trim(), 'Sound icon not rendered');
@@ -143,14 +152,47 @@ await test('A favicon is declared', () => {
   assert(icon && icon.getAttribute('href').startsWith('data:image/svg+xml'), 'No inline favicon');
 });
 
-await test('Changing the board issues a new code', () => {
+await test('Player seats stay in one row and are icon-only', () => {
+  const seats = $$('#room-seats .seat-chip');
+  eq(seats.length, 4);
+  eq($('#room-seats').textContent.trim(), '', 'Seat row contains text');
+});
+
+await test('The game code is a button that copies and confirms', async () => {
+  const code = $('#room-code');
+  eq(code.tagName, 'BUTTON', 'The code should be a button');
+  click(code);
+  await wait(80); // the clipboard write is async
+  assert(code.classList.contains('copied'), 'No copied feedback on the code');
+  const toast = $('.toast');
+  assert(toast && /copied/i.test(toast.textContent), 'No copy confirmation toast');
+});
+
+await test('Humans-only holds the game until a second person joins', () => {
+  const chk = $('#chk-humans-only');
+  chk.checked = true;
+  chk.dispatchEvent(new window.Event('change', { bubbles: true }));
+  assert($('#btn-room-start').disabled, 'Start should be blocked with one human');
+  eq($$('#room-seats .seat-chip.open-seat').length, 3, 'Open seats should be marked');
+  assert(!$('#room-seats').innerHTML.includes('rect x="4" y="8"'), 'Bot icons still shown');
+  chk.checked = false;
+  chk.dispatchEvent(new window.Event('change', { bubbles: true }));
+  assert(!$('#btn-room-start').disabled, 'Start should reopen when bots are allowed');
+});
+
+await test('Changing the board issues a new code', async () => {
   const before = $('#room-code').textContent;
   click('#btn-room-newboard');
+  await wait(120); // the room re-opens asynchronously
   assert($('#room-code').textContent !== before, 'New board did not change the code');
 });
 
-await test('Starting the game opens the board', () => {
+await test('Starting the game opens the board', async () => {
+  await wait(120);
+  assert(!$('#btn-room-start').disabled, 'Start button was left disabled');
   click('#btn-room-start');
+  await wait(60);
+  if ($('#screen-game').hidden) throw new Error('Game screen did not open. Page errors: ' + pageErrors.join(' | '));
   assert(!$('#screen-game').hidden, 'Game screen did not open');
   assert($('#screen-title').hidden, 'Start screen still mounted');
   assert($$('#board-cells .cell').length === 144, 'Expected a 12×12 board');
@@ -342,7 +384,10 @@ await test('A full game reaches the result screen', async () => {
 
 await test('The winner is an avatar plus a short verb, with no player number', () => {
   const text = $('#winner-text').textContent;
-  assert(/^(You win|Wins)$/.test(text), `Unexpected winner text: "${text}"`);
+  assert(
+    /^(Your queen has arrived\. You win!|Claims the throne!)$/.test(text),
+    `Unexpected winner text: "${text}"`
+  );
   assert($('#winner-avatar svg'), 'Winner avatar missing');
   const colour = $('#winner-line').style.getPropertyValue('--seat');
   assert(colour, 'Winner avatar has no seat colour');
@@ -373,6 +418,23 @@ await test('The replay is scrubbed by round, not by single step', () => {
   eq($('#replay-label').textContent, `${rounds} / ${rounds}`, 'Label did not follow the scrubber');
   // A one-round game can legitimately start and end on the same cell.
   if (rounds > 2) assert(at() !== atStart, 'Scrubbing did not move the queen');
+});
+
+await test('The replay queen is drawn solid, not as a ghost', () => {
+  assert($('#replay-queen.solid'), 'Replay queen is not the solid variant');
+  assert($('#replay-queen .queen-plinth'), 'Replay queen has no backing plinth');
+});
+
+await test('The help sheet carries the story and the full rules', () => {
+  click('#btn-help');
+  const help = $('#modal-rules');
+  assert(!help.hidden, 'Help did not open');
+  const text = help.textContent;
+  for (const phrase of ['wandering the realm', 'Opposing pulls cancel', 'Secret treasures', 'The walls', 'final reveal']) {
+    assert(text.includes(phrase), `Help is missing "${phrase}"`);
+  }
+  click($('#modal-rules [data-close]'));
+  assert($('#modal-rules').hidden, 'Help did not close');
 });
 
 await test('The result stats live in the bottom message strip', () => {

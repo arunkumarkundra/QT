@@ -28,7 +28,7 @@ Pages branch and it works as-is; no build step is required for Pages, because
 
 ```bash
 npm install            # jsdom, for the UI tests only
-npm test               # all three suites — 125 assertions
+npm test               # all three suites — 130 assertions
 npm run test:rules     # the §23 rule suite alone, zero dependencies
 npm run simulate 200   # headless AI games, reports the §27 metrics
 npm run build          # regenerate dist/queens-tug.html from src/
@@ -105,14 +105,14 @@ client can send a malformed bid and get it rejected; it cannot send `"move Right
 
 ## Tests
 
-125 assertions across three suites. The rule suite has zero dependencies and
+130 assertions across three suites. The rule suite has zero dependencies and
 covers every bullet in §23, each tagged with its spec section.
 
 | Suite | Covers |
 | --- | --- |
 | `tests/engine.test.js` | 77 rule tests — placement, bidding, cancellation, boundary stopping, castles, bonus decay/collection/replacement, coin economy, the information boundary, determinism, the reveal. |
 | `tests/host.test.js` | 13 tests that the host behaves like a server: filtered reads, rejected outcomes, refused reveals, takeover reporting. |
-| `tests/ui.test.js` | 34 tests booting the built file in jsdom and playing a full game through the real DOM. |
+| `tests/ui.test.js` | 39 tests booting the built file in jsdom and playing a full game through the real DOM. |
 
 The UI tests check the *built* file, so a broken bundle fails the suite rather
 than shipping.
