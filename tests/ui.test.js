@@ -46,8 +46,31 @@ const dom = new JSDOM(html, {
     w.scrollTo = () => {};
     w.navigator.clipboard = { writeText: async () => {} };
     // jsdom has no WebAudio; the sound module must degrade silently.
-    w.AudioContext = undefined;
-    w.webkitAudioContext = undefined;
+    // A stub WebAudio implementation, so the sound path is genuinely
+    // exercised rather than skipped. Counts every node that gets created.
+    w.__audioNodes = 0;
+    const P = function () {
+      return { value: 0, setValueAtTime() {}, exponentialRampToValueAtTime() {}, linearRampToValueAtTime() {} };
+    };
+    const N = function () {
+      w.__audioNodes++;
+      return { connect() {}, disconnect() {}, start() {}, stop() {}, frequency: P(), Q: P(), gain: P(), type: '' };
+    };
+    w.AudioContext = function () {
+      return {
+        currentTime: 0,
+        sampleRate: 48000,
+        state: 'running',
+        destination: {},
+        createOscillator: N,
+        createGain: N,
+        createBiquadFilter: N,
+        createBufferSource: N,
+        createBuffer: (c, len) => ({ getChannelData: () => new Float32Array(len) }),
+        resume: () => Promise.resolve(),
+      };
+    };
+    w.RTCPeerConnection = function () {};
   },
 });
 const { window } = dom;
@@ -90,16 +113,30 @@ await test('The key art is inlined rather than fetched', () => {
   assert(src.startsWith('data:image/webp;base64,'), 'Logo not inlined');
 });
 
-await test('Play goes straight to the board — there is no setup screen', () => {
-  click('#btn-solo');
-  assert(!$('#screen-game').hidden, 'Game screen did not open');
-  assert($('#screen-title').hidden, 'Title screen still mounted');
-  assert($$('#board-cells .cell').length === 144, 'Expected a 12×12 board');
+await test('The start screen carries the logo, seats, code, link and controls', () => {
+  assert($('.title-art'), 'Logo missing from the start screen');
+  eq($$('#room-seats .seat-chip').length, 4, 'Expected four seats');
+  assert(/^QT-[A-Z0-9]{6}$/.test($('#room-code').textContent), 'Malformed game code');
+  assert($('#room-link').textContent.includes('?game=QT-'), 'Join link missing');
+  assert($('#btn-room-copy'), 'Copy-link button missing');
+  assert(!$('#btn-room-start').hidden, 'Start button missing');
+  assert($('#btn-join'), 'Join-with-code missing');
+  assert($('#btn-sound-title').innerHTML.trim(), 'Sound icon not rendered');
+  assert($('#btn-rules').innerHTML.trim(), 'Rules icon not rendered');
+  assert(!$('#btn-solo'), 'The redundant solo option is still present');
 });
 
-await test('The title screen offers solo, hosting, joining and rules', () => {
-  eq($$('#title-menu .btn').length, 4, 'Expected four entry actions');
-  assert($('#room-panel').hidden, 'Room panel should stay closed until needed');
+await test('One seat is you; the rest wait as computer players', () => {
+  const chips = $$('#room-seats .seat-chip');
+  eq(chips.filter((c) => c.dataset.kind === 'human').length, 1);
+  eq(chips.filter((c) => c.classList.contains('waiting')).length, 3);
+});
+
+await test('Starting the game opens the board', () => {
+  click('#btn-room-start');
+  assert(!$('#screen-game').hidden, 'Game screen did not open');
+  assert($('#screen-title').hidden, 'Start screen still mounted');
+  assert($$('#board-cells .cell').length === 144, 'Expected a 12×12 board');
 });
 
 await test('Only this player’s own pieces are ever drawn', () => {
@@ -117,8 +154,10 @@ await test('Seats are colour and icon only — no names or numbers', () => {
   eq($$('#seat-chips .lock-badge').length, 4, 'Every seat needs a lock indicator');
 });
 
-await test('The coin balance sits in the top strip, not under the board', () => {
-  assert($('.seat-strip #purse'), 'Purse is not in the top strip');
+await test('The coin balance sits at the far left of the top strip', () => {
+  const strip = [...$('.seat-strip').children];
+  eq(strip[0].id, 'purse', 'The purse should come before the player icons');
+  eq(strip[1].id, 'seat-chips', 'Player icons should follow the purse');
   assert(!$('.action-row'), 'The old action row survived');
   assert(!$('#btn-lock'), 'A separate lock button survived');
 });
@@ -136,13 +175,30 @@ await test('The cells beside the queen become the controls', () => {
 
 let firstDir = null;
 
-await test('Clicking a cell drops one coin and shows the stack', () => {
+await test('Clicking a cell drops a visible coin, not an empty box', () => {
   const target = $('#board-cells .cell.target');
   firstDir = target.dataset.dir;
   click(target);
   eq($$('#board-cells .cell.staked').length, 1, 'No staked cell after a click');
   eq($('#board-cells .cell.staked .count').textContent, '1', 'Coin count wrong');
+  const disc = $('#board-cells .cell.staked .disc');
+  assert(disc && disc.innerHTML.includes('<svg'), 'The coin disc is empty — no coin artwork');
   assert(!$('#btn-undo').disabled, 'Undo should become available');
+});
+
+await test('The treasure stack is drawn from equal-sized coins', () => {
+  const pile = $('#board-overlay .bonus-pile');
+  if (!pile) return; // this seat's treasure may be off-screen in a short game
+  const radii = [...pile.innerHTML.matchAll(/rx="([\d.]+)"/g)].map((m) => m[1]);
+  const coinRadii = radii.filter((r) => r === '16');
+  assert(coinRadii.length >= 3, 'Treasure stack should be several identical coins');
+});
+
+await test('Sound is actually produced, not silently swallowed', () => {
+  const before = window.__audioNodes;
+  click($('#board-cells .cell.target'));
+  assert(window.__audioNodes > before, 'Placing a coin produced no audio nodes');
+  click('#btn-undo');
 });
 
 await test('Coins accumulate one per click', () => {

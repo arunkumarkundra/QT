@@ -176,22 +176,21 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--gold-l
    TITLE
    ========================================================================== */
 
-.title-screen { justify-content: center; align-items: center; padding: 20px; overflow-y: auto; }
+.title-screen { justify-content: flex-start; align-items: center; padding: 10px 18px 24px; overflow-y: auto; }
 
-.title-inner { text-align: center; max-width: 460px; width: 100%; }
+.title-inner { text-align: center; max-width: 420px; width: 100%; margin: auto; }
 
 .title-art {
-  width: min(370px, 74vw);
+  width: min(300px, 62vw);
   border-radius: var(--r-lg);
   display: block;
-  margin: 0 auto 30px;
+  margin: 0 auto 22px;
   box-shadow: 0 30px 80px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(217, 164, 65, 0.3);
   animation: art-in 0.8s cubic-bezier(.2,.8,.3,1) both;
 }
 @keyframes art-in { from { opacity: 0; transform: translateY(20px) scale(.97); } to { opacity: 1; transform: none; } }
 
-.title-menu { display: grid; gap: 11px; width: min(300px, 100%); margin: 0 auto; }
-.title-menu .btn { width: 100%; }
+
 
 /* ==========================================================================
    GAME SCREEN — single column, board first
@@ -790,8 +789,10 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--gold-l
   .result-stats { gap: 13px; font-size: 12px; }
 }
 
-@media (max-height: 700px) {
-  .title-art { width: min(280px, 60vw); margin-bottom: 20px; }
+@media (max-height: 780px) {
+  .title-art { width: min(210px, 46vw); margin-bottom: 16px; }
+  .lobby { gap: 12px; }
+  .code-value { font-size: 21px; padding: 7px 16px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -803,21 +804,22 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--gold-l
 }
 
 /* ==========================================================================
-   ROOM PANEL — lives on the title screen, so there is no separate lobby
+   START SCREEN — logo, seats, code and controls, all in one place
    ========================================================================== */
 
-.room-panel {
-  display: grid;
-  gap: 15px;
-  justify-items: center;
-  width: min(320px, 100%);
-  margin: 0 auto;
-  animation: fade-in .3s ease both;
-}
-.room-panel .btn { width: 100%; }
-.room-panel .btn-ghost.btn-sm { width: auto; }
+.title-bar { height: auto; padding-bottom: 4px; }
 
-.room-seats { display: flex; gap: 11px; justify-content: center; }
+.lobby {
+  display: grid;
+  gap: 16px;
+  justify-items: center;
+  width: min(340px, 100%);
+  margin: 0 auto;
+  animation: fade-in .35s ease both;
+}
+.lobby .btn { width: 100%; }
+
+.room-seats { display: flex; gap: 12px; justify-content: center; }
 
 .room-status {
   margin: 0;
@@ -825,16 +827,58 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--gold-l
   color: var(--silver-dim);
   min-height: 20px;
   text-align: center;
+  line-height: 1.4;
 }
 .room-status.error { color: #ffb0b2; }
 
+/* game code, tappable to copy */
+.code-block { display: grid; gap: 9px; justify-items: center; width: 100%; }
+
+.code-value {
+  font-family: var(--mono);
+  font-size: 25px;
+  letter-spacing: .2em;
+  color: var(--gold-lt);
+  padding: 9px 20px;
+  border-radius: var(--r-md);
+  border: 1px dashed rgba(217,164,65,.45);
+  background: rgba(217,164,65,.06);
+  transition: background .15s, border-color .15s, transform .12s;
+}
+.code-value:hover { background: rgba(217,164,65,.14); border-color: var(--gold); }
+.code-value:active { transform: scale(.98); }
+.code-value.copied { border-style: solid; border-color: var(--ok); color: var(--ok); }
+
+.invite-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 6px 6px 12px;
+  border-radius: var(--r-md);
+  background: rgba(0,0,0,.36);
+  border: 1px solid var(--line);
+}
+.invite-url {
+  flex: 1;
+  min-width: 0;
+  font-size: 11.5px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+.invite-row .btn { width: auto; flex: none; }
+
 /* a seat waiting to be claimed pulses gently */
-.seat-chip.waiting { animation: seat-wait 1.8s ease-in-out infinite; }
-@keyframes seat-wait { 0%,100% { opacity: .4; } 50% { opacity: .85; } }
+.seat-chip.waiting { animation: seat-wait 2s ease-in-out infinite; }
+@keyframes seat-wait { 0%,100% { opacity: .45; } 50% { opacity: .9; } }
 .seat-chip.joined { animation: seat-pop .45s cubic-bezier(.3,1.6,.5,1) both; }
 @keyframes seat-pop { 0% { transform: scale(.5); } 60% { transform: scale(1.14); } 100% { transform: scale(1); } }
 
 /* result stats reuse the bottom message strip */
-#result-status { color: var(--muted); font-size: 13.5px; gap: 18px; }
+#result-status { color: var(--muted); font-size: 13.5px; }
 #result-status b { font-family: var(--mono); color: var(--silver); font-weight: 500; }
 #result-status .stat { margin: 0 9px; }

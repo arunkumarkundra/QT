@@ -28,7 +28,7 @@ Pages branch and it works as-is; no build step is required for Pages, because
 
 ```bash
 npm install            # jsdom, for the UI tests only
-npm test               # all three suites — 117 assertions
+npm test               # all three suites — 120 assertions
 npm run test:rules     # the §23 rule suite alone, zero dependencies
 npm run simulate 200   # headless AI games, reports the §27 metrics
 npm run build          # regenerate dist/queens-tug.html from src/
@@ -101,14 +101,14 @@ client can send a malformed bid and get it rejected; it cannot send `"move Right
 
 ## Tests
 
-117 assertions across three suites. The rule suite has zero dependencies and
+120 assertions across three suites. The rule suite has zero dependencies and
 covers every bullet in §23, each tagged with its spec section.
 
 | Suite | Covers |
 | --- | --- |
 | `tests/engine.test.js` | 77 rule tests — placement, bidding, cancellation, boundary stopping, castles, bonus decay/collection/replacement, coin economy, the information boundary, determinism, the reveal. |
 | `tests/host.test.js` | 13 tests that the host behaves like a server: filtered reads, rejected outcomes, refused reveals, takeover reporting. |
-| `tests/ui.test.js` | 26 tests booting the built file in jsdom and playing a full game through the real DOM. |
+| `tests/ui.test.js` | 29 tests booting the built file in jsdom and playing a full game through the real DOM. |
 
 The UI tests check the *built* file, so a broken bundle fails the suite rather
 than shipping.
@@ -224,10 +224,11 @@ Disconnects reuse the takeover rule already in the engine: a vanished peer's
 seat flips to computer control immediately so the round can still resolve, and
 the other players are told.
 
-**How to play together:** one person picks *Play with friends* and shares the
-code or link; others pick *Join with a code* (or just open the link). Seats
-fill as people arrive, and any seat still empty at kick-off is played by the
-computer. The host presses Start.
+**How to play together:** the start screen *is* the lobby. It opens with a game
+code already live, so you just share the code or link. Others open the link (or
+enter the code) and their icon replaces a computer player in the seat row. Any
+seat still empty at kick-off is played by the computer, so you never have to
+wait for a full table. The host presses Start.
 
 **Caveat worth knowing:** peer-to-peer connectivity could not be exercised in
 the environment this was built in — the sandbox has no outbound WebRTC. The

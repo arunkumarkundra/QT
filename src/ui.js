@@ -75,18 +75,27 @@ const ART = {
     <path fill="#8a6420" opacity=".8" d="M13 23.5 11.7 14l4.9 3.5L20 11.4l3.4 6.1 4.9-3.5-1.3 9.5z"/>
   </svg>`,
 
-  /** A stack of coins. The number is drawn over it by the caller. */
-  treasure: `<svg viewBox="0 0 36 36" aria-hidden="true">
+  /**
+   * A neat stack of identical coins seen slightly from above. Every coin is
+   * the same size — an uneven pile reads as a mistake rather than as treasure.
+   */
+  treasure: `<svg viewBox="0 0 44 44" aria-hidden="true">
     <defs>
-      <linearGradient id="tg" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0" stop-color="#ffeeb8"/><stop offset=".5" stop-color="#e0b040"/><stop offset="1" stop-color="#8a6420"/>
+      <linearGradient id="tgTop" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#fff3cf"/><stop offset=".5" stop-color="#eec867"/><stop offset="1" stop-color="#b58a2c"/>
+      </linearGradient>
+      <linearGradient id="tgEdge" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#d9a441"/><stop offset="1" stop-color="#7d5a17"/>
       </linearGradient>
     </defs>
-    <g stroke="#5c4416" stroke-width="1">
-      <ellipse cx="18" cy="27" rx="13" ry="5" fill="url(#tg)"/>
-      <ellipse cx="18" cy="22.5" rx="11" ry="4.3" fill="url(#tg)"/>
-      <ellipse cx="18" cy="18" rx="9" ry="3.6" fill="url(#tg)"/>
-      <ellipse cx="18" cy="13.5" rx="6.5" ry="2.8" fill="url(#tg)"/>
+    <g stroke="#5c4416" stroke-width="1.1" stroke-linejoin="round">
+      ${[30.5, 25.5, 20.5, 15.5]
+        .map(
+          (cy) => `<path fill="url(#tgEdge)" d="M6 ${cy} a16 5.4 0 0 0 32 0 v-3.4 a16 5.4 0 0 1-32 0 z"/>
+                   <ellipse cx="22" cy="${cy - 3.4}" rx="16" ry="5.4" fill="url(#tgTop)"/>`
+        )
+        .join('')}
+      <ellipse cx="22" cy="12.1" rx="10.6" ry="3.4" fill="none" stroke="#b58a2c" stroke-width=".9" opacity=".75"/>
     </g>
   </svg>`,
 
@@ -140,6 +149,9 @@ const app = {
   seat: 0,
   /** Order coins were placed, so a single undo is always possible. */
   placements: [],
+  /** Bumped whenever a game is mounted or torn down; in-flight animations
+   *  belonging to an older generation abandon themselves. */
+  epoch: 0,
   code: '',
   animating: false,
   started: false,
@@ -229,6 +241,7 @@ function newLocalHost(code, humanSeats = [0]) {
 
 /** Wire whichever game object we have into the board and start listening. */
 function mountGame(game, seat) {
+  app.epoch++;
   if (app.unsub) app.unsub();
   app.game = game;
   app.seat = seat;
@@ -249,17 +262,6 @@ function mountGame(game, seat) {
   render();
 }
 
-/** Solo: three computer opponents, everything local. */
-function startSolo() {
-  app.online = false;
-  app.isHost = true;
-  app.code = randomCode();
-  if (app.host) app.host.dispose();
-  app.host = newLocalHost(app.code);
-  app.host.start();
-  mountGame(wrapLocal(app.host, 0), 0);
-}
-
 /** The local host exposes getView(seat); the UI always asks for its own seat. */
 function wrapLocal(host, seat) {
   return {
@@ -276,14 +278,9 @@ function wrapLocal(host, seat) {
   };
 }
 
-/* ---------------- room panel ---------------- */
+/* ---------------- the start screen doubles as the lobby ---------------- */
 
-function showRoomPanel(show) {
-  $('#title-menu').hidden = show;
-  $('#room-panel').hidden = !show;
-}
-
-function renderRoomSeats(lobby, joinedSeat = null) {
+function renderRoomSeats(lobby, mySeat = 0) {
   const box = $('#room-seats');
   const previous = new Set([...box.children].map((c) => c.dataset.kind + c.dataset.seat));
   box.innerHTML = '';
@@ -292,33 +289,47 @@ function renderRoomSeats(lobby, joinedSeat = null) {
     chip.style.setProperty('--seat', SEAT_COLORS[s.seat]);
     chip.dataset.seat = s.seat;
     chip.dataset.kind = s.kind;
+    chip.appendChild(el('span', 'avatar', s.kind === 'human' ? ART.human : ART.bot));
     if (s.kind === 'human') {
-      chip.appendChild(el('span', 'avatar', ART.human));
       if (!previous.has('human' + s.seat)) chip.classList.add('joined');
     } else {
-      chip.appendChild(el('span', 'avatar', ART.bot));
       chip.classList.add('waiting');
     }
-    if (s.seat === joinedSeat) chip.classList.add('is-you');
+    if (s.seat === mySeat) chip.classList.add('is-you');
+    chip.title = s.kind === 'human' ? 'Player' : 'Open seat — the computer will play it';
     box.appendChild(chip);
   }
 }
 
-/** Host a game others can join over the network. */
-async function startHosting() {
+const soloLobby = () => ({
+  seats: [0, 1, 2, 3].map((seat) => ({ seat, kind: seat === 0 ? 'human' : 'bot' })),
+});
+
+function showCode(code) {
+  app.code = code;
+  $('#room-code').textContent = code;
+  $('#room-link').textContent = inviteUrl(code);
+}
+
+/**
+ * Open the start screen ready to host. A room is opened in the background so a
+ * shared code works the moment it is handed over; if the relay is unreachable
+ * the game still plays perfectly well against the computer.
+ */
+async function prepareHostLobby() {
   app.online = true;
   app.isHost = true;
-  app.code = randomCode();
-
-  showRoomPanel(true);
-  $('#room-code').textContent = app.code;
+  showCode(randomCode());
   $('#btn-room-start').hidden = false;
-  $('#room-status').textContent = 'Opening the room…';
   $('#room-status').classList.remove('error');
+  $('#room-status').textContent = 'Empty seats are played by the computer.';
 
+  leaveRoom();
   if (app.host) app.host.dispose();
   app.host = newLocalHost(app.code);
-  renderRoomSeats({ seats: [0, 1, 2, 3].map((seat) => ({ seat, kind: seat === 0 ? 'human' : 'bot' })) }, 0);
+  renderRoomSeats(soloLobby(), 0);
+
+  if (!multiplayerSupported()) return;
 
   try {
     app.net = await openRoom({
@@ -340,56 +351,58 @@ async function startHosting() {
         const humans = lobby.seats.filter((s) => s.kind === 'human').length;
         $('#room-status').textContent =
           humans === 1
-            ? 'Share the code. Empty seats are played by the computer.'
-            : `${humans} players seated. Start whenever you like.`;
+            ? 'Empty seats are played by the computer.'
+            : `${humans} players seated. Start whenever you are ready.`;
       },
     });
-    $('#room-status').textContent = 'Share the code. Empty seats are played by the computer.';
-  } catch (err) {
-    $('#room-status').textContent = 'Could not reach the matchmaking relay. You can still play solo.';
+  } catch {
+    $('#room-status').textContent =
+      'Could not reach the matchmaking relay — you can still play against the computer.';
     $('#room-status').classList.add('error');
   }
 }
 
-/** Join somebody else's room. */
-async function startJoining(code) {
+/** Someone opened a shared link or typed a code. */
+async function prepareJoinLobby(code) {
   app.online = true;
   app.isHost = false;
-  app.code = code;
-
-  showRoomPanel(true);
-  $('#room-code').textContent = code;
+  showCode(code);
   $('#btn-room-start').hidden = true;
-  $('#room-status').textContent = 'Looking for the game…';
   $('#room-status').classList.remove('error');
-  renderRoomSeats({ seats: [0, 1, 2, 3].map((seat) => ({ seat, kind: 'bot' })) });
+  $('#room-status').textContent = 'Looking for the game…';
+  renderRoomSeats({ seats: [0, 1, 2, 3].map((seat) => ({ seat, kind: 'bot' })) }, -1);
 
+  leaveRoom();
   try {
     app.net = await openRoom({ code, isHost: false, onEvent: () => {} });
 
+    const remote = createRemoteGame({ net: app.net });
+    app.game = remote;
+
     app.net.onLobby((lobby) => {
-      renderRoomSeats(lobby, app.game?.getSeat?.() ?? null);
+      renderRoomSeats(lobby, remote.getSeat?.() ?? -1);
       $('#room-status').textContent = 'Seated. Waiting for the host to start…';
+      sound.play('join');
     });
 
-    const remote = createRemoteGame({ net: app.net });
-    // The first state that arrives means the host has started the game.
     const unsub = remote.subscribe(() => {
       if (remote.getView() && $('#screen-game').hidden) {
         unsub();
         mountGame(remote, remote.getSeat());
       }
     });
-    app.game = remote;
-  } catch (err) {
+  } catch {
     $('#room-status').textContent = 'Could not reach the matchmaking relay.';
     $('#room-status').classList.add('error');
+    $('#btn-room-start').hidden = false; // fall back to a local game
   }
 }
 
-function hostStartsPlay() {
-  if (!app.game) return;
+/** The host presses Start. Anyone seated comes along; empty seats stay AI. */
+function startTheGame() {
+  sound.unlock();
   sound.play('press');
+  if (!app.host) app.host = newLocalHost(app.code);
   app.host.start();
   app.bridge?.pushViews();
   mountGame(wrapLocal(app.host, 0), 0);
@@ -430,6 +443,7 @@ function onHostEvent(evt) {
 function render() {
   if (!app.game) return;
   const view = app.game.getView();
+  if (!view) return;
   renderSeatChips();
   renderMarkers(view);
   renderTargets(view);
@@ -522,7 +536,9 @@ function renderTargets(view) {
     if (staked > 0) {
       cell.classList.add('staked');
       const stack = el('div', 'coin-stack');
-      stack.appendChild(el('span', 'disc'));
+      // The disc was previously empty, which is why staked coins read as a
+      // plain coloured box. It carries the struck-coin artwork now.
+      stack.appendChild(el('span', 'disc', ART.coin));
       stack.appendChild(el('span', 'count num', String(staked)));
       cell.appendChild(stack);
     } else if (canPlan) {
@@ -574,6 +590,7 @@ function renderStatus(view) {
 function renderTimer() {
   if (!app.game) return;
   const view = app.game.getView();
+  if (!view) return;
   const ring = $('#timer');
   const CIRC = 2 * Math.PI * 18;
 
@@ -709,6 +726,9 @@ function lockIn() {
  * ------------------------------------------------------------------ */
 
 async function playResolution() {
+  const epoch = app.epoch;
+  const alive = () => app.game && app.epoch === epoch;
+  if (!alive()) return;
   const res = app.game.getLastResolution();
   if (!res) return;
   app.animating = true;
@@ -734,6 +754,7 @@ async function playResolution() {
     if (!res.blockedByBoundary) sound.play('moveEnd');
   }
 
+  if (!alive()) return;
   if (view.lastResolution?.yourBonusCollected) {
     const claimed = $('.bonus-mark', $('#board-overlay'));
     if (claimed) claimed.classList.add('claimed');
@@ -743,9 +764,10 @@ async function playResolution() {
   }
 
   await wait(UI_TIMING.resolutionHoldMs);
+  if (!alive()) return;
 
   const after = app.game.getView();
-  if (after.status === 'FINISHED') {
+  if (after && after.status === 'FINISHED') {
     app.animating = false;
     sound.play('victory');
     await wait(700);
@@ -807,7 +829,13 @@ function flashWall(dir) {
  * ------------------------------------------------------------------ */
 
 function showResult() {
-  const reveal = app.game.getReveal();
+  if (!app.game) return;
+  let reveal;
+  try {
+    reveal = app.game.getReveal();
+  } catch {
+    return; // the game was abandoned before the reveal arrived
+  }
   app.reveal = reveal;
   showScreen('screen-result');
 
@@ -1105,49 +1133,43 @@ function boot() {
   $('#btn-exit').innerHTML = ART.exit;
   $('#btn-undo').innerHTML = ART.undo;
   $('#coin-icon').innerHTML = ART.coin;
+  $('#btn-rules').innerHTML = ART.help;
   sound.restorePreference();
   refreshSoundIcon();
 
-  // ---- title screen doubles as the lobby ----
-  $('#btn-solo').onclick = () => {
-    sound.unlock();
-    sound.play('press');
-    startSolo();
-  };
-  $('#btn-friends').onclick = () => {
-    sound.unlock();
-    sound.play('press');
-    if (!multiplayerSupported()) {
-      toast('This browser cannot make peer connections.', 'bad');
-      return;
-    }
-    startHosting();
-  };
+  /**
+   * Browsers only start audio after a real gesture, and which gesture is hard
+   * to predict. Listen once on every kind of first interaction rather than
+   * relying on one particular button.
+   */
+  for (const evt of ['pointerdown', 'touchstart', 'keydown']) {
+    document.addEventListener(evt, () => sound.unlock(), { passive: true });
+  }
+
+  // ---- start screen ----
+  $('#btn-room-start').onclick = startTheGame;
+  $('#btn-room-copy').onclick = () => copyLink(app.code);
+  $('#room-code').onclick = () => copyCode(app.code);
   $('#btn-join').onclick = () => {
-    sound.unlock();
     sound.play('press');
     openModal('modal-join');
     setTimeout(() => $('#join-input').focus(), 60);
   };
-  $('#btn-rules').onclick = () => {
-    sound.unlock();
-    sound.play('press');
-    openModal('modal-rules');
-  };
-
-  $('#btn-room-start').onclick = hostStartsPlay;
-  $('#btn-room-back').onclick = () => {
-    leaveRoom();
-    showRoomPanel(false);
-  };
-  $('#btn-room-copy').onclick = () => copyLink(app.code);
+  for (const id of ['#btn-rules', '#btn-help']) $(id).onclick = () => openModal('modal-rules');
+  for (const id of ['#btn-sound', '#btn-sound-title']) {
+    $(id).onclick = () => {
+      sound.toggle();
+      refreshSoundIcon();
+      if (!sound.isMuted()) sound.play('press');
+    };
+  }
 
   // ---- join modal ----
   $('#btn-join-go').onclick = () => {
     const raw = $('#join-input').value.trim().toUpperCase();
     if (!raw) return;
     closeModals();
-    startJoining(raw.startsWith('QT-') ? raw : `QT-${raw}`);
+    prepareJoinLobby(raw.startsWith('QT-') ? raw : `QT-${raw}`);
   };
   $('#join-input').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') $('#btn-join-go').click();
@@ -1159,13 +1181,6 @@ function boot() {
     if (e.target.closest('.queen.armed')) lockIn();
   });
   $('#btn-undo').onclick = undoCoin;
-
-  $('#btn-help').onclick = () => openModal('modal-rules');
-  $('#btn-sound').onclick = () => {
-    sound.toggle();
-    refreshSoundIcon();
-    if (!sound.isMuted()) sound.play('press');
-  };
   $('#btn-exit').onclick = leaveToTitle;
 
   // ---- result ----
@@ -1173,12 +1188,7 @@ function boot() {
     sound.play('press');
     runReplay();
   };
-  $('#btn-again').onclick = () => {
-    stopReplay();
-    sound.play('press');
-    leaveRoom();
-    startSolo();
-  };
+  $('#btn-again').onclick = leaveToTitle;
   $('#btn-share').onclick = shareResult;
 
   // ---- modals ----
@@ -1192,6 +1202,11 @@ function boot() {
   // ---- keyboard ----
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') return closeModals();
+    if (!$('#screen-title').hidden && e.key === 'Enter' && !$('#btn-room-start').hidden) {
+      if (['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName)) return;
+      e.preventDefault();
+      return startTheGame();
+    }
     if ($('#screen-game').hidden) return;
     if (['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName)) return;
     const map = { ArrowUp: 'UP', ArrowDown: 'DOWN', ArrowLeft: 'LEFT', ArrowRight: 'RIGHT' };
@@ -1207,10 +1222,23 @@ function boot() {
     }
   });
 
-  // An invitation link drops you straight into that room.
-  const joinCode = params.get('game');
   showScreen('screen-title');
-  if (joinCode) startJoining(joinCode.toUpperCase());
+  const joinCode = params.get('game');
+  if (joinCode) prepareJoinLobby(joinCode.toUpperCase());
+  else prepareHostLobby();
+}
+
+async function copyCode(code) {
+  const btn = $('#room-code');
+  try {
+    await navigator.clipboard.writeText(code);
+    btn.classList.add('copied');
+    setTimeout(() => btn.classList.remove('copied'), 1200);
+    sound.play('press');
+    toast('Game code copied.', 'gold');
+  } catch {
+    toast(code);
+  }
 }
 
 async function copyLink(code) {
@@ -1231,20 +1259,23 @@ function leaveRoom() {
 }
 
 function leaveToTitle() {
+  app.epoch++;
+  app.animating = false;
   stopReplay();
-  leaveRoom();
   app.unsub?.();
-  app.host?.dispose();
   app.game?.dispose?.();
-  app.host = null;
   app.game = null;
   app.started = false;
-  showRoomPanel(false);
   showScreen('screen-title');
+  prepareHostLobby();
 }
 
 function refreshSoundIcon() {
-  $('#btn-sound').innerHTML = sound.isMuted() ? ART.soundOff : ART.soundOn;
+  const icon = sound.isMuted() ? ART.soundOff : ART.soundOn;
+  for (const id of ['#btn-sound', '#btn-sound-title']) {
+    const node = $(id);
+    if (node) node.innerHTML = icon;
+  }
 }
 
 boot();

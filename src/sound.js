@@ -14,20 +14,53 @@ const audio = {
   master: null,
   muted: false,
   ready: false,
+  kicked: false,
 };
 
+/**
+ * Browsers refuse to start audio until a real user gesture, and Safari in
+ * particular will hand back a context stuck in "suspended" or "interrupted"
+ * that silently swallows everything scheduled on it. So: create on demand,
+ * resume on EVERY call, and kick the hardware awake with a silent buffer the
+ * first time. Cheap, and it removes an entire class of "no sound" bug.
+ */
 function ensureContext() {
-  if (audio.ctx) {
-    if (audio.ctx.state === 'suspended') audio.ctx.resume();
-    return audio.ctx;
+  if (!audio.ctx) {
+    const Ctx = typeof window !== 'undefined' && (window.AudioContext || window.webkitAudioContext);
+    if (!Ctx) return null;
+    try {
+      audio.ctx = new Ctx();
+    } catch {
+      return null;
+    }
+    audio.master = audio.ctx.createGain();
+    audio.master.gain.value = 0.38;
+    audio.master.connect(audio.ctx.destination);
+    audio.ready = true;
   }
-  const Ctx = window.AudioContext || window.webkitAudioContext;
-  if (!Ctx) return null;
-  audio.ctx = new Ctx();
-  audio.master = audio.ctx.createGain();
-  audio.master.gain.value = 0.38;
-  audio.master.connect(audio.ctx.destination);
-  audio.ready = true;
+
+  if (audio.ctx.state !== 'running') {
+    try {
+      const resumed = audio.ctx.resume();
+      if (resumed && typeof resumed.catch === 'function') resumed.catch(() => {});
+    } catch {
+      /* nothing more we can do */
+    }
+  }
+
+  if (!audio.kicked) {
+    audio.kicked = true;
+    try {
+      const buf = audio.ctx.createBuffer(1, 1, audio.ctx.sampleRate);
+      const src = audio.ctx.createBufferSource();
+      src.buffer = buf;
+      src.connect(audio.ctx.destination);
+      src.start(0);
+    } catch {
+      /* harmless */
+    }
+  }
+
   return audio.ctx;
 }
 
@@ -215,14 +248,20 @@ const RECIPES = {
 };
 
 export const sound = {
-  /** Call from a user gesture to unlock audio. */
+  /** Call from any user gesture. Safe and cheap to call repeatedly. */
   unlock() {
-    ensureContext();
+    return !!ensureContext();
+  },
+
+  /** True once the hardware is actually running. */
+  isRunning() {
+    return !!audio.ctx && audio.ctx.state === 'running';
   },
 
   play(name, ...args) {
     if (audio.muted) return;
-    if (!ensureContext()) return;
+    const ctx = ensureContext();
+    if (!ctx) return;
     const recipe = RECIPES[name];
     if (!recipe) return;
     try {

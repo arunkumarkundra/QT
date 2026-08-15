@@ -18,27 +18,29 @@
   <!-- ======================= TITLE ======================= -->
   <section id="screen-title" class="screen title-screen">
     <div class="title-inner">
-      <img class="title-art" src="./assets/logo.webp" alt="Queen's Tug — four hidden castles, one wandering queen, every move is a secret battle">
-      <div class="title-menu" id="title-menu">
-        <button class="btn btn-gold btn-lg" id="btn-solo">Play solo</button>
-        <button class="btn" id="btn-friends">Play with friends</button>
-        <button class="btn" id="btn-join">Join with a code</button>
-        <button class="btn btn-ghost" id="btn-rules">How to play</button>
+
+      <div class="bar title-bar">
+        <span class="bar-spacer"></span>
+        <button class="icon-btn" id="btn-sound-title" aria-label="Toggle sound"></button>
+        <button class="icon-btn" id="btn-rules" aria-label="How to play"></button>
       </div>
 
-      <!-- room panel: same screen, no navigation -->
-      <div class="room-panel" id="room-panel" hidden>
+      <img class="title-art" src="./assets/logo.webp" alt="Queen's Tug — four hidden castles, one wandering queen, every move is a secret battle">
+
+      <div class="lobby">
         <div class="room-seats" id="room-seats"></div>
-        <p class="room-status" id="room-status">Connecting…</p>
+        <p class="room-status" id="room-status">Empty seats are played by the computer.</p>
+
         <div class="code-block">
-          <span class="code-label">Game code</span>
-          <span class="code-value" id="room-code">QT-000000</span>
-          <div class="code-actions">
+          <button class="code-value" id="room-code" title="Click to copy the code">QT-000000</button>
+          <div class="invite-row">
+            <span class="invite-url num" id="room-link"></span>
             <button class="btn btn-ghost btn-sm" id="btn-room-copy">Copy link</button>
           </div>
         </div>
+
         <button class="btn btn-gold btn-lg" id="btn-room-start">Start the game</button>
-        <button class="btn btn-ghost btn-sm" id="btn-room-back">Back</button>
+        <button class="btn btn-ghost" id="btn-join">Join with a code</button>
       </div>
     </div>
   </section>
@@ -56,12 +58,12 @@
       </div>
 
       <div class="seat-strip">
-        <div class="seat-group" id="seat-chips"></div>
         <div class="purse" id="purse">
           <span class="coin-icon" id="coin-icon"></span>
           <span class="value num" id="purse-value">50</span>
           <button class="undo" id="btn-undo" aria-label="Take back a coin" disabled></button>
         </div>
+        <div class="seat-group" id="seat-chips"></div>
         <div class="timer" id="timer">
           <svg viewBox="0 0 44 44" aria-hidden="true">
             <circle class="track" cx="22" cy="22" r="18" fill="none" stroke-width="3.5"></circle>
