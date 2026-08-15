@@ -319,8 +319,12 @@ await test('Undo takes a coin back even when the queen is against a wall', () =>
 });
 
 await test('Every direction beside the queen accepts and releases coins', () => {
+  // Regression: the queen's "ready to lock" ring used to overlap neighbouring
+  // cells and swallow their clicks, so some directions silently refused coins.
   clearCoins();
-  for (const cell of $$('#board-cells .cell.target')) {
+  const targets = $$('#board-cells .cell.target');
+  assert(targets.length >= 2, 'Expected at least two stakeable directions');
+  for (const cell of targets) {
     const dir = cell.dataset.dir;
     click(cell);
     const stack = $(`#board-cells .cell[data-dir="${dir}"] .count`);
@@ -423,6 +427,26 @@ await test('The replay is scrubbed by round, not by single step', () => {
 await test('The replay queen is drawn solid, not as a ghost', () => {
   assert($('#replay-queen.solid'), 'Replay queen is not the solid variant');
   assert($('#replay-queen .queen-plinth'), 'Replay queen has no backing plinth');
+});
+
+await test('Every SVG gradient id on the board is unique', () => {
+  // Duplicated gradient ids made the browser resolve every fill to whichever
+  // element came first, and broke them entirely when the overlay was rebuilt —
+  // which is what turned the queen and the treasure into ghosts.
+  const ids = [...doc.querySelectorAll('#screen-result [id]')]
+    .map((n) => n.id)
+    .filter((id) => /^(qg|tt|te|cf)\d+$/.test(id));
+  assert(ids.length > 0, 'Expected generated gradient ids');
+  eq(new Set(ids).size, ids.length, `Duplicate gradient ids: ${ids.join(', ')}`);
+});
+
+await test('Every fill reference resolves to a gradient that exists', () => {
+  const defined = new Set([...doc.querySelectorAll('#screen-result [id]')].map((n) => n.id));
+  const refs = [...doc.querySelectorAll('#screen-result [fill^="url("]')].map((n) =>
+    n.getAttribute('fill').slice(5, -1)
+  );
+  assert(refs.length > 0, 'Expected gradient references');
+  for (const r of refs) assert(defined.has(r), `Fill references missing gradient "${r}"`);
 });
 
 await test('The help sheet carries the story and the full rules', () => {

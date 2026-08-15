@@ -48,13 +48,13 @@ export const DEFAULT_CONFIG = {
   boardHeight: 12,
 
   /** Starting coins per player. Tune here — there is no in-game setting. */
-  startingCoins: 50,
+  startingCoins: 100,
 
   /** Replenishment amount when all four players are exhausted (§11). */
-  replenishCoins: 50,
+  replenishCoins: 100,
 
   /** Seconds a player gets to plan each round. Tune here. */
-  decisionTimerMs: 20000,
+  decisionTimerMs: 15000,
 
   /**
    * §4.1 — Conservative safety margin. Hidden objects must be at least this
@@ -67,7 +67,7 @@ export const DEFAULT_CONFIG = {
    * Every bonus stack starts at this value and decays by the queen's actual
    * travel distance each round (§10.2). One number, not a band.
    */
-  bonusStartReward: 50,
+  bonusStartReward: 100,
 
   /** §10.2 — Bonus decays by actual queen movement, clamped at this floor. */
   bonusMinReward: 0,

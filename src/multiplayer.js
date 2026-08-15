@@ -25,9 +25,18 @@
  * the queen, so a hostile peer cannot fabricate an outcome.
  */
 
+/**
+ * Signalling relays, tried in order. Different networks block different
+ * things, so this spans two CDNs and two relay strategies rather than betting
+ * on one. The first module that exposes `joinRoom` wins.
+ */
 const TRYSTERO_URLS = [
-  'https://esm.sh/trystero@0.21.5/nostr',
-  'https://cdn.jsdelivr.net/npm/trystero@0.21.5/+esm',
+  'https://esm.sh/trystero@0.21/nostr',
+  'https://cdn.jsdelivr.net/npm/trystero@0.21/nostr/+esm',
+  'https://esm.sh/trystero@0.21/mqtt',
+  'https://cdn.jsdelivr.net/npm/trystero@0.21/mqtt/+esm',
+  'https://esm.sh/trystero/nostr',
+  'https://esm.sh/trystero/mqtt',
 ];
 
 const APP_ID = 'queens-tug-v1';
@@ -40,7 +49,7 @@ function loadTrystero() {
     let lastError = null;
     for (const url of TRYSTERO_URLS) {
       try {
-        const mod = await import(/* @vite-ignore */ url);
+        const mod = await withTimeout(import(/* @vite-ignore */ url), 8000);
         if (mod?.joinRoom) return mod;
       } catch (err) {
         lastError = err;
@@ -49,6 +58,14 @@ function loadTrystero() {
     throw lastError || new Error('Could not load the networking library.');
   })();
   return trysteroPromise;
+}
+
+/** Never let a hung request leave the lobby spinning forever. */
+function withTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error('timed out')), ms)),
+  ]);
 }
 
 export const NET_STATE = {
@@ -72,6 +89,9 @@ export async function openRoom({ code, isHost, onEvent }) {
   const [sendState, onState] = room.makeAction('state');
   const [sendIntent, onIntent] = room.makeAction('intent');
   const [sendLobby, onLobby] = room.makeAction('lobby');
+  // An explicit greeting removes any dependence on peer-join event ordering,
+  // which is the classic way a lobby ends up silently waiting forever.
+  const [sendHello, onHello] = room.makeAction('hello');
 
   const api = {
     room,
@@ -81,9 +101,12 @@ export async function openRoom({ code, isHost, onEvent }) {
     sendState,
     sendIntent,
     sendLobby,
+    sendHello,
     onState,
     onIntent,
     onLobby,
+    onHello,
+    getPeers: () => Object.keys(room.getPeers?.() || {}),
     leave() {
       try {
         room.leave();
@@ -95,6 +118,22 @@ export async function openRoom({ code, isHost, onEvent }) {
 
   room.onPeerJoin((peerId) => onEvent({ type: 'peer-join', peerId }));
   room.onPeerLeave((peerId) => onEvent({ type: 'peer-leave', peerId }));
+
+  // Announce ourselves repeatedly for a short while. Whichever side comes up
+  // second still gets seen.
+  if (!isHost) {
+    let tries = 0;
+    const knock = () => {
+      if (tries++ > 20) return;
+      try {
+        sendHello({ t: 'hello' });
+      } catch {
+        /* not connected yet */
+      }
+      setTimeout(knock, 1000);
+    };
+    knock();
+  }
 
   return api;
 }
@@ -166,6 +205,21 @@ export function attachHostToRoom({ net, host, onLobbyChange }) {
     }
   }
 
+  // A joiner's greeting is the authoritative signal to seat them.
+  net.onHello((_msg, peerId) => {
+    api.admit(peerId);
+  });
+
+  // Re-announce the lobby periodically so a peer that connected during a
+  // hiccup still learns the seating.
+  const heartbeat = setInterval(() => {
+    try {
+      broadcastLobby();
+    } catch {
+      /* ignore */
+    }
+  }, 2000);
+
   net.onIntent((msg, peerId) => {
     const seat = seatOfPeer(peerId);
     if (seat === null) return; // not seated; ignore
@@ -176,7 +230,7 @@ export function attachHostToRoom({ net, host, onLobbyChange }) {
 
   const unsubscribe = host.subscribe(() => pushViews());
 
-  return {
+  const api = {
     lobbySnapshot,
     pushViews,
     broadcastLobby,
@@ -209,9 +263,12 @@ export function attachHostToRoom({ net, host, onLobbyChange }) {
 
     seatOfPeer,
     dispose() {
+      clearInterval(heartbeat);
       unsubscribe();
     },
   };
+
+  return api;
 }
 
 /* ------------------------------------------------------------------ *
@@ -224,7 +281,7 @@ export function attachHostToRoom({ net, host, onLobbyChange }) {
  * tell the difference and needs no branching. It holds only what arrived over
  * the wire: one PlayerView.
  */
-export function createRemoteGame({ net, onEvent }) {
+export function createRemoteGame({ net, onEvent, onLobby }) {
   let view = null;
   let summary = null;
   let presenting = false;

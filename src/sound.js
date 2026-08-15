@@ -160,35 +160,41 @@ function chink({ freq = 2100, start = 0, gain = 0.3 }) {
  * ------------------------------------------------------------------ */
 
 const NOTE = {
-  D3: 146.8, F3: 174.6, G3: 196.0, A3: 220.0, Bb3: 233.1, C4: 261.6,
-  D4: 293.7, E4: 329.6, F4: 349.2, G4: 392.0, A4: 440.0, Bb4: 466.2,
-  C5: 523.3, D5: 587.3, E5: 659.3, F5: 698.5, A5: 880.0, D6: 1174.7,
+  D3: 146.8, A3: 220.0, B3: 246.9, D4: 293.7, E4: 329.6, Fs4: 370.0,
+  G4: 392.0, A4: 440.0, B4: 493.9, Cs5: 554.4, D5: 587.3, E5: 659.3,
+  Fs5: 740.0, G5: 784.0, A5: 880.0, B5: 987.8, D6: 1174.7,
 };
 
-/** [beat, frequency, beats-long, level] */
+/**
+ * A coronation processional in D major. Dotted, brass-style fanfare figures
+ * over a stately bass — the sound of a court announcing itself rather than
+ * plotting in the dark. [beat, frequency, beats-long, level]
+ */
 const THEME_MELODY = [
-  [0, NOTE.D4, 1.5, 0.26], [1.5, NOTE.A4, 0.5, 0.22],
-  [2, NOTE.F4, 1, 0.24], [3, NOTE.G4, 1, 0.24],
-  [4, NOTE.A4, 2, 0.28], [6, NOTE.G4, 1, 0.2], [7, NOTE.F4, 1, 0.2],
-  [8, NOTE.E4, 1.5, 0.24], [9.5, NOTE.F4, 0.5, 0.2],
-  [10, NOTE.D4, 2, 0.26],
-  [12, NOTE.A4, 1, 0.24], [13, NOTE.Bb4, 1, 0.24],
-  [14, NOTE.A4, 2, 0.3],
+  // fanfare call
+  [0, NOTE.D5, 0.75, 0.30], [0.75, NOTE.D5, 0.25, 0.22],
+  [1, NOTE.Fs5, 1, 0.30], [2, NOTE.A5, 1.5, 0.32], [3.5, NOTE.G5, 0.5, 0.22],
+  [4, NOTE.Fs5, 1, 0.28], [5, NOTE.E5, 1, 0.26], [6, NOTE.D5, 2, 0.30],
+  // answering phrase, a step lower and gentler
+  [8, NOTE.A4, 0.75, 0.26], [8.75, NOTE.B4, 0.25, 0.2],
+  [9, NOTE.Cs5, 1, 0.28], [10, NOTE.D5, 1.5, 0.3], [11.5, NOTE.E5, 0.5, 0.22],
+  [12, NOTE.Fs5, 1, 0.3], [13, NOTE.E5, 1, 0.26],
+  [14, NOTE.D5, 2, 0.34],
 ];
 
-/** Sustained root notes underneath. */
+/** Sustained roots: D — G — A — D. A plain, ceremonial cadence. */
 const THEME_BASS = [
-  [0, NOTE.D3, 4, 0.2], [4, NOTE.F3, 4, 0.2],
-  [8, NOTE.Bb3, 4, 0.2], [12, NOTE.A3, 4, 0.22],
+  [0, NOTE.D3, 4, 0.22], [4, NOTE.G4 / 2, 4, 0.22],
+  [8, NOTE.A3, 4, 0.22], [12, NOTE.D3, 4, 0.24],
 ];
 
-/** Sparse high answer, like a distant chime. */
+/** High bells answering the fanfare, like distant tower chimes. */
 const THEME_CHIME = [
-  [4.5, NOTE.D5, 1, 0.12], [6.5, NOTE.F5, 1, 0.1],
-  [12.5, NOTE.A5, 1, 0.12], [14.5, NOTE.D6, 2, 0.14],
+  [2.5, NOTE.D6, 1.5, 0.13], [6.5, NOTE.A5, 1.5, 0.12],
+  [10.5, NOTE.Fs5, 1, 0.11], [14.5, NOTE.D6, 2, 0.16],
 ];
 
-const BEAT = 0.46; // seconds — an unhurried processional
+const BEAT = 0.50; // seconds — a measured, ceremonial tread
 const THEME_BEATS = 16;
 
 let themeTimer = null;

@@ -197,7 +197,13 @@ test('A split bid across multiple directions is valid', () => {
 
 test('Split bids are still capped by the total balance', () => {
   const s = newGame('bid-3');
-  assert(!validateBid(s, 0, B({ UP: 40, DOWN: 40 })).ok, '80 coins accepted from a 50-coin balance');
+  const start = s.config.startingCoins;
+  const half = Math.ceil(start / 2) + 1; // two halves that overshoot the purse
+  assert(
+    !validateBid(s, 0, B({ UP: half, DOWN: half })).ok,
+    `${half * 2} coins accepted from a ${start}-coin balance`
+  );
+  assert(validateBid(s, 0, B({ UP: half - 1, DOWN: start - half + 1 })).ok, 'An exact-balance split was rejected');
 });
 
 test('A zero bid is valid', () => {

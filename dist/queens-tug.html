@@ -535,6 +535,11 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--gold-l
 
 .queen { z-index: 8; }
 .queen.armed { pointer-events: auto; cursor: pointer; }
+/**
+ * The "ready to lock" ring extends beyond the queen's own cell. It must never
+ * take pointer events, or it swallows clicks aimed at the cells beside her —
+ * which is exactly why some directions stopped accepting coins.
+ */
 .queen.armed::after {
   content: '';
   position: absolute;
@@ -542,7 +547,12 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--gold-l
   border-radius: 50%;
   border: 2px dashed rgba(255, 226, 150, .55);
   animation: arm-spin 9s linear infinite;
+  pointer-events: none;
 }
+/* Only the queen artwork itself is clickable, and only within her own cell. */
+.queen.armed svg { pointer-events: auto; cursor: pointer; }
+.queen.armed { pointer-events: none; }
+.queen .queen-glow { pointer-events: none; }
 .queen.armed:hover::after { border-color: var(--gold-lt); border-style: solid; }
 @keyframes arm-spin { to { transform: rotate(360deg); } }
 .queen svg { width: 84%; height: 84%; filter: drop-shadow(0 0 10px rgba(255,220,140,.95)); }
@@ -1211,13 +1221,13 @@ const DEFAULT_CONFIG = {
   boardHeight: 12,
 
   /** Starting coins per player. Tune here — there is no in-game setting. */
-  startingCoins: 50,
+  startingCoins: 100,
 
   /** Replenishment amount when all four players are exhausted (§11). */
-  replenishCoins: 50,
+  replenishCoins: 100,
 
   /** Seconds a player gets to plan each round. Tune here. */
-  decisionTimerMs: 20000,
+  decisionTimerMs: 15000,
 
   /**
    * §4.1 — Conservative safety margin. Hidden objects must be at least this
@@ -1230,7 +1240,7 @@ const DEFAULT_CONFIG = {
    * Every bonus stack starts at this value and decays by the queen's actual
    * travel distance each round (§10.2). One number, not a band.
    */
-  bonusStartReward: 50,
+  bonusStartReward: 100,
 
   /** §10.2 — Bonus decays by actual queen movement, clamped at this floor. */
   bonusMinReward: 0,
@@ -2636,35 +2646,41 @@ function chink({ freq = 2100, start = 0, gain = 0.3 }) {
  * ------------------------------------------------------------------ */
 
 const NOTE = {
-  D3: 146.8, F3: 174.6, G3: 196.0, A3: 220.0, Bb3: 233.1, C4: 261.6,
-  D4: 293.7, E4: 329.6, F4: 349.2, G4: 392.0, A4: 440.0, Bb4: 466.2,
-  C5: 523.3, D5: 587.3, E5: 659.3, F5: 698.5, A5: 880.0, D6: 1174.7,
+  D3: 146.8, A3: 220.0, B3: 246.9, D4: 293.7, E4: 329.6, Fs4: 370.0,
+  G4: 392.0, A4: 440.0, B4: 493.9, Cs5: 554.4, D5: 587.3, E5: 659.3,
+  Fs5: 740.0, G5: 784.0, A5: 880.0, B5: 987.8, D6: 1174.7,
 };
 
-/** [beat, frequency, beats-long, level] */
+/**
+ * A coronation processional in D major. Dotted, brass-style fanfare figures
+ * over a stately bass — the sound of a court announcing itself rather than
+ * plotting in the dark. [beat, frequency, beats-long, level]
+ */
 const THEME_MELODY = [
-  [0, NOTE.D4, 1.5, 0.26], [1.5, NOTE.A4, 0.5, 0.22],
-  [2, NOTE.F4, 1, 0.24], [3, NOTE.G4, 1, 0.24],
-  [4, NOTE.A4, 2, 0.28], [6, NOTE.G4, 1, 0.2], [7, NOTE.F4, 1, 0.2],
-  [8, NOTE.E4, 1.5, 0.24], [9.5, NOTE.F4, 0.5, 0.2],
-  [10, NOTE.D4, 2, 0.26],
-  [12, NOTE.A4, 1, 0.24], [13, NOTE.Bb4, 1, 0.24],
-  [14, NOTE.A4, 2, 0.3],
+  // fanfare call
+  [0, NOTE.D5, 0.75, 0.30], [0.75, NOTE.D5, 0.25, 0.22],
+  [1, NOTE.Fs5, 1, 0.30], [2, NOTE.A5, 1.5, 0.32], [3.5, NOTE.G5, 0.5, 0.22],
+  [4, NOTE.Fs5, 1, 0.28], [5, NOTE.E5, 1, 0.26], [6, NOTE.D5, 2, 0.30],
+  // answering phrase, a step lower and gentler
+  [8, NOTE.A4, 0.75, 0.26], [8.75, NOTE.B4, 0.25, 0.2],
+  [9, NOTE.Cs5, 1, 0.28], [10, NOTE.D5, 1.5, 0.3], [11.5, NOTE.E5, 0.5, 0.22],
+  [12, NOTE.Fs5, 1, 0.3], [13, NOTE.E5, 1, 0.26],
+  [14, NOTE.D5, 2, 0.34],
 ];
 
-/** Sustained root notes underneath. */
+/** Sustained roots: D — G — A — D. A plain, ceremonial cadence. */
 const THEME_BASS = [
-  [0, NOTE.D3, 4, 0.2], [4, NOTE.F3, 4, 0.2],
-  [8, NOTE.Bb3, 4, 0.2], [12, NOTE.A3, 4, 0.22],
+  [0, NOTE.D3, 4, 0.22], [4, NOTE.G4 / 2, 4, 0.22],
+  [8, NOTE.A3, 4, 0.22], [12, NOTE.D3, 4, 0.24],
 ];
 
-/** Sparse high answer, like a distant chime. */
+/** High bells answering the fanfare, like distant tower chimes. */
 const THEME_CHIME = [
-  [4.5, NOTE.D5, 1, 0.12], [6.5, NOTE.F5, 1, 0.1],
-  [12.5, NOTE.A5, 1, 0.12], [14.5, NOTE.D6, 2, 0.14],
+  [2.5, NOTE.D6, 1.5, 0.13], [6.5, NOTE.A5, 1.5, 0.12],
+  [10.5, NOTE.Fs5, 1, 0.11], [14.5, NOTE.D6, 2, 0.16],
 ];
 
-const BEAT = 0.46; // seconds — an unhurried processional
+const BEAT = 0.50; // seconds — a measured, ceremonial tread
 const THEME_BEATS = 16;
 
 let themeTimer = null;
@@ -3310,9 +3326,18 @@ function createHost({
  * the queen, so a hostile peer cannot fabricate an outcome.
  */
 
+/**
+ * Signalling relays, tried in order. Different networks block different
+ * things, so this spans two CDNs and two relay strategies rather than betting
+ * on one. The first module that exposes `joinRoom` wins.
+ */
 const TRYSTERO_URLS = [
-  'https://esm.sh/trystero@0.21.5/nostr',
-  'https://cdn.jsdelivr.net/npm/trystero@0.21.5/+esm',
+  'https://esm.sh/trystero@0.21/nostr',
+  'https://cdn.jsdelivr.net/npm/trystero@0.21/nostr/+esm',
+  'https://esm.sh/trystero@0.21/mqtt',
+  'https://cdn.jsdelivr.net/npm/trystero@0.21/mqtt/+esm',
+  'https://esm.sh/trystero/nostr',
+  'https://esm.sh/trystero/mqtt',
 ];
 
 const APP_ID = 'queens-tug-v1';
@@ -3325,7 +3350,7 @@ function loadTrystero() {
     let lastError = null;
     for (const url of TRYSTERO_URLS) {
       try {
-        const mod = await import(/* @vite-ignore */ url);
+        const mod = await withTimeout(import(/* @vite-ignore */ url), 8000);
         if (mod?.joinRoom) return mod;
       } catch (err) {
         lastError = err;
@@ -3334,6 +3359,14 @@ function loadTrystero() {
     throw lastError || new Error('Could not load the networking library.');
   })();
   return trysteroPromise;
+}
+
+/** Never let a hung request leave the lobby spinning forever. */
+function withTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error('timed out')), ms)),
+  ]);
 }
 
 const NET_STATE = {
@@ -3357,6 +3390,9 @@ async function openRoom({ code, isHost, onEvent }) {
   const [sendState, onState] = room.makeAction('state');
   const [sendIntent, onIntent] = room.makeAction('intent');
   const [sendLobby, onLobby] = room.makeAction('lobby');
+  // An explicit greeting removes any dependence on peer-join event ordering,
+  // which is the classic way a lobby ends up silently waiting forever.
+  const [sendHello, onHello] = room.makeAction('hello');
 
   const api = {
     room,
@@ -3366,9 +3402,12 @@ async function openRoom({ code, isHost, onEvent }) {
     sendState,
     sendIntent,
     sendLobby,
+    sendHello,
     onState,
     onIntent,
     onLobby,
+    onHello,
+    getPeers: () => Object.keys(room.getPeers?.() || {}),
     leave() {
       try {
         room.leave();
@@ -3380,6 +3419,22 @@ async function openRoom({ code, isHost, onEvent }) {
 
   room.onPeerJoin((peerId) => onEvent({ type: 'peer-join', peerId }));
   room.onPeerLeave((peerId) => onEvent({ type: 'peer-leave', peerId }));
+
+  // Announce ourselves repeatedly for a short while. Whichever side comes up
+  // second still gets seen.
+  if (!isHost) {
+    let tries = 0;
+    const knock = () => {
+      if (tries++ > 20) return;
+      try {
+        sendHello({ t: 'hello' });
+      } catch {
+        /* not connected yet */
+      }
+      setTimeout(knock, 1000);
+    };
+    knock();
+  }
 
   return api;
 }
@@ -3451,6 +3506,21 @@ function attachHostToRoom({ net, host, onLobbyChange }) {
     }
   }
 
+  // A joiner's greeting is the authoritative signal to seat them.
+  net.onHello((_msg, peerId) => {
+    api.admit(peerId);
+  });
+
+  // Re-announce the lobby periodically so a peer that connected during a
+  // hiccup still learns the seating.
+  const heartbeat = setInterval(() => {
+    try {
+      broadcastLobby();
+    } catch {
+      /* ignore */
+    }
+  }, 2000);
+
   net.onIntent((msg, peerId) => {
     const seat = seatOfPeer(peerId);
     if (seat === null) return; // not seated; ignore
@@ -3461,7 +3531,7 @@ function attachHostToRoom({ net, host, onLobbyChange }) {
 
   const unsubscribe = host.subscribe(() => pushViews());
 
-  return {
+  const api = {
     lobbySnapshot,
     pushViews,
     broadcastLobby,
@@ -3494,9 +3564,12 @@ function attachHostToRoom({ net, host, onLobbyChange }) {
 
     seatOfPeer,
     dispose() {
+      clearInterval(heartbeat);
       unsubscribe();
     },
   };
+
+  return api;
 }
 
 /* ------------------------------------------------------------------ *
@@ -3509,7 +3582,7 @@ function attachHostToRoom({ net, host, onLobbyChange }) {
  * tell the difference and needs no branching. It holds only what arrived over
  * the wire: one PlayerView.
  */
-function createRemoteGame({ net, onEvent }) {
+function createRemoteGame({ net, onEvent, onLobby }) {
   let view = null;
   let summary = null;
   let presenting = false;
@@ -3634,22 +3707,36 @@ const DIR_WORD = { UP: 'up', DOWN: 'down', LEFT: 'left', RIGHT: 'right' };
  * Artwork — inline SVG so there are no image requests
  * ------------------------------------------------------------------ */
 
+/**
+ * SVG gradients live in a document-wide id namespace. Four treasure stacks and
+ * a queen all declaring `id="tgTop"` meant the browser resolved every fill to
+ * whichever element happened to be first in the document — and when the replay
+ * cleared and rebuilt the overlay, those references broke and the shapes
+ * rendered unfilled. That is the "ghost" queen and the dark treasure. Every
+ * instance now mints its own ids.
+ */
+let artSeq = 0;
+const uid = (prefix) => `${prefix}${(artSeq += 1)}`;
+
 const ART = {
-  queen: `<svg viewBox="0 0 40 46" aria-hidden="true">
+  queen: () => {
+    const g = uid('qg');
+    return `<svg viewBox="0 0 40 46" aria-hidden="true">
     <defs>
-      <linearGradient id="qgold" x1="0" y1="0" x2="0" y2="1">
+      <linearGradient id="${g}" x1="0" y1="0" x2="0" y2="1">
         <stop offset="0" stop-color="#fffbf0"/><stop offset=".45" stop-color="#f2d492"/><stop offset="1" stop-color="#b98d33"/>
       </linearGradient>
     </defs>
     <g stroke="#5c4416" stroke-width="1.1" stroke-linejoin="round">
-      <path fill="url(#qgold)" d="M6 13 3 4l7.5 5L15 1.5 20 8l5-6.5L29.5 9 37 4l-3 9a5 5 0 0 1-1.4 2.4l-1.6 6.6H9L7.4 15.4A5 5 0 0 1 6 13z"/>
+      <path fill="url(#${g})" d="M6 13 3 4l7.5 5L15 1.5 20 8l5-6.5L29.5 9 37 4l-3 9a5 5 0 0 1-1.4 2.4l-1.6 6.6H9L7.4 15.4A5 5 0 0 1 6 13z"/>
       <circle cx="3" cy="4" r="2.2" fill="#fff6dd"/><circle cx="37" cy="4" r="2.2" fill="#fff6dd"/>
       <circle cx="20" cy="6.5" r="2.4" fill="#fff6dd"/>
-      <rect x="8" y="21" width="24" height="3.6" rx="1.4" fill="url(#qgold)"/>
-      <path fill="url(#qgold)" d="M11 25h18l2.6 11H8.4z"/>
-      <rect x="5" y="36" width="30" height="6" rx="2.2" fill="url(#qgold)"/>
+      <rect x="8" y="21" width="24" height="3.6" rx="1.4" fill="url(#${g})"/>
+      <path fill="url(#${g})" d="M11 25h18l2.6 11H8.4z"/>
+      <rect x="5" y="36" width="30" height="6" rx="2.2" fill="url(#${g})"/>
     </g>
-  </svg>`,
+  </svg>`;
+  },
 
   castle: (color) => `<svg viewBox="0 0 36 34" aria-hidden="true">
     <g stroke="rgba(0,0,0,.55)" stroke-width="1.1" stroke-linejoin="round">
@@ -3660,42 +3747,49 @@ const ART = {
   </svg>`,
 
   /** A struck gold coin, milled edge and all. */
-  coin: `<svg viewBox="0 0 40 40" aria-hidden="true">
+  coin: () => {
+    const g = uid('cf');
+    return `<svg viewBox="0 0 40 40" aria-hidden="true">
     <defs>
-      <radialGradient id="cface" cx="36%" cy="30%">
+      <radialGradient id="${g}" cx="36%" cy="30%">
         <stop offset="0" stop-color="#fff6d8"/><stop offset=".5" stop-color="#eec867"/><stop offset="1" stop-color="#a97d22"/>
       </radialGradient>
     </defs>
     <circle cx="20" cy="20" r="19" fill="#7d5a17"/>
     <circle cx="20" cy="20" r="19" fill="none" stroke="#5c4416" stroke-width="1.4" stroke-dasharray="1.6 1.6"/>
-    <circle cx="20" cy="19.2" r="17" fill="url(#cface)"/>
+    <circle cx="20" cy="19.2" r="17" fill="url(#${g})"/>
     <circle cx="20" cy="19.2" r="13.4" fill="none" stroke="#a97d22" stroke-width="1.1" opacity=".65"/>
     <path fill="#8a6420" opacity=".8" d="M13 23.5 11.7 14l4.9 3.5L20 11.4l3.4 6.1 4.9-3.5-1.3 9.5z"/>
-  </svg>`,
+  </svg>`;
+  },
 
   /**
    * A neat stack of identical coins seen slightly from above. Every coin is
    * the same size — an uneven pile reads as a mistake rather than as treasure.
    */
-  treasure: `<svg viewBox="0 0 44 44" aria-hidden="true">
+  treasure: () => {
+    const top = uid('tt');
+    const edge = uid('te');
+    return `<svg viewBox="0 0 44 44" aria-hidden="true">
     <defs>
-      <linearGradient id="tgTop" x1="0" y1="0" x2="1" y2="1">
+      <linearGradient id="${top}" x1="0" y1="0" x2="1" y2="1">
         <stop offset="0" stop-color="#fff3cf"/><stop offset=".5" stop-color="#eec867"/><stop offset="1" stop-color="#b58a2c"/>
       </linearGradient>
-      <linearGradient id="tgEdge" x1="0" y1="0" x2="0" y2="1">
+      <linearGradient id="${edge}" x1="0" y1="0" x2="0" y2="1">
         <stop offset="0" stop-color="#d9a441"/><stop offset="1" stop-color="#7d5a17"/>
       </linearGradient>
     </defs>
     <g stroke="#5c4416" stroke-width="1.1" stroke-linejoin="round">
       ${[30.5, 25.5, 20.5, 15.5]
         .map(
-          (cy) => `<path fill="url(#tgEdge)" d="M6 ${cy} a16 5.4 0 0 0 32 0 v-3.4 a16 5.4 0 0 1-32 0 z"/>
-                   <ellipse cx="22" cy="${cy - 3.4}" rx="16" ry="5.4" fill="url(#tgTop)"/>`
+          (cy) => `<path fill="url(#${edge})" d="M6 ${cy} a16 5.4 0 0 0 32 0 v-3.4 a16 5.4 0 0 1-32 0 z"/>
+                   <ellipse cx="22" cy="${cy - 3.4}" rx="16" ry="5.4" fill="url(#${top})"/>`
         )
         .join('')}
       <ellipse cx="22" cy="12.1" rx="10.6" ry="3.4" fill="none" stroke="#b58a2c" stroke-width=".9" opacity=".75"/>
     </g>
-  </svg>`,
+  </svg>`;
+  },
 
   human: `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
     <circle cx="12" cy="7.6" r="4.1"/>
@@ -3817,7 +3911,7 @@ function ensureQueen(overlay) {
   if (!q) {
     q = el('div', 'marker queen');
     q.id = 'queen';
-    q.innerHTML = `<div class="queen-glow"></div>${ART.queen}`;
+    q.innerHTML = `<div class="queen-glow"></div>${ART.queen()}`;
     overlay.appendChild(q);
   }
   return q;
@@ -3992,6 +4086,8 @@ async function prepareHostLobby() {
       code: app.code,
       isHost: true,
       onEvent: (e) => {
+        // The authoritative seating signal is the joiner's greeting, handled
+        // inside the bridge. This is a backup for peers that connect quietly.
         if (e.type === 'peer-join') {
           const seat = app.bridge?.admit(e.peerId);
           if (seat !== null && seat !== undefined) sound.play('join');
@@ -4025,30 +4121,51 @@ async function prepareJoinLobby(code) {
   renderRoomSeats({ seats: [0, 1, 2, 3].map((seat) => ({ seat, kind: 'bot' })) }, -1);
 
   leaveRoom();
-  try {
-    app.net = await openRoom({ code, isHost: false, onEvent: () => {} });
 
-    const remote = createRemoteGame({ net: app.net });
-    app.game = remote;
-
-    app.net.onLobby((lobby) => {
-      renderRoomSeats(lobby, remote.getSeat?.() ?? -1);
-      $('#room-status').textContent = "You're in. Waiting for the host…";
-      sound.play('join');
-    });
-
-    const unsub = remote.subscribe(() => {
-      if (remote.getView() && $('#screen-game').hidden) {
-        unsub();
-        mountGame(remote, remote.getSeat());
-      }
-    });
-  } catch {
-    $('#room-status').textContent =
-      'Game not found. Check the code or start a new game.';
+  let seated = false;
+  /** If the host never answers, say so rather than spinning forever. */
+  const giveUp = setTimeout(() => {
+    if (seated) return;
+    $('#room-status').textContent = 'Game not found. Check the code or start a new game.';
     $('#room-status').classList.add('error');
     setLobbyMode('host');
+  }, 20000);
+  app.joinTimer = giveUp;
+
+  try {
+    app.net = await openRoom({ code, isHost: false, onEvent: () => {} });
+  } catch {
+    clearTimeout(giveUp);
+    $('#room-status').textContent = "Online play is unavailable. You can still play against the court's bots.";
+    $('#room-status').classList.add('error');
+    setLobbyMode('host');
+    return;
   }
+
+  $('#room-status').textContent = 'Connected. Looking for the host…';
+
+  const remote = createRemoteGame({ net: app.net });
+  app.game = remote;
+
+  app.net.onLobby((lobby) => {
+    if (!seated) {
+      seated = true;
+      clearTimeout(giveUp);
+      sound.play('join');
+    }
+    app.lobby = lobby;
+    $('#room-status').classList.remove('error');
+    $('#room-status').textContent = "You're in. Waiting for the host…";
+    renderRoomSeats(lobby, remote.getSeat?.() ?? -1);
+  });
+
+  const unsub = remote.subscribe(() => {
+    if (remote.getView() && $('#screen-game').hidden) {
+      unsub();
+      clearTimeout(giveUp);
+      mountGame(remote, remote.getSeat());
+    }
+  });
 }
 
 /** The host presses Start. Anyone seated comes along; empty seats stay AI. */
@@ -4152,7 +4269,7 @@ function renderMarkers(view) {
     const mark = el('div', 'bonus-mark');
     mark.classList.add('marker');
     if (b.reward <= 12) mark.classList.add('fading');
-    mark.innerHTML = `<div class="bonus-pile"><div class="glow"></div>${ART.treasure}<span class="value num">${b.reward}</span></div>`;
+    mark.innerHTML = `<div class="bonus-pile"><div class="glow"></div>${ART.treasure()}<span class="value num">${b.reward}</span></div>`;
     placeMarker(mark, b.position);
     mark.title = 'Your treasure — land exactly here to claim it';
     overlay.appendChild(mark);
@@ -4197,7 +4314,7 @@ function renderTargets(view) {
       const stack = el('div', 'coin-stack');
       // The disc was previously empty, which is why staked coins read as a
       // plain coloured box. It carries the struck-coin artwork now.
-      stack.appendChild(el('span', 'disc', ART.coin));
+      stack.appendChild(el('span', 'disc', ART.coin()));
       stack.appendChild(el('span', 'count num', String(staked)));
       cell.appendChild(stack);
     } else if (canPlan) {
@@ -4210,7 +4327,7 @@ function renderTargets(view) {
 function renderPurse(view) {
   const purse = $('#purse');
   const icon = $('#coin-icon');
-  if (icon && !icon.firstChild) icon.innerHTML = ART.coin;
+  if (icon && !icon.firstChild) icon.innerHTML = ART.coin();
   const value = $('#purse-value');
   const balance = view.you.coinsRemaining;
   if (app.lastBalance !== null && balance !== app.lastBalance) {
@@ -4595,7 +4712,7 @@ function drawReplayFrame(n, partialSteps = null) {
     if (!b || b.reward <= 0) continue;
     const mark = el('div', 'marker bonus-mark');
     mark.style.setProperty('--seat', SEAT_COLORS[b.seat]);
-    mark.innerHTML = `<div class="bonus-ring"></div><div class="bonus-pile">${ART.treasure}<span class="value num">${b.reward}</span></div>`;
+    mark.innerHTML = `<div class="bonus-ring"></div><div class="bonus-pile">${ART.treasure()}<span class="value num">${b.reward}</span></div>`;
     placeMarker(mark, b.position);
     overlay.appendChild(mark);
   }
@@ -4608,7 +4725,7 @@ function drawReplayFrame(n, partialSteps = null) {
 
   const queen = el('div', 'marker queen solid');
   queen.id = 'replay-queen';
-  queen.innerHTML = `<div class="queen-glow"></div><div class="queen-plinth"></div>${ART.queen}`;
+  queen.innerHTML = `<div class="queen-glow"></div><div class="queen-plinth"></div>${ART.queen()}`;
   placeMarker(queen, pts[pts.length - 1] || reveal.completeQueenPath[0]);
   overlay.appendChild(queen);
 
@@ -4827,7 +4944,7 @@ function boot() {
 
   $('#btn-help').innerHTML = ART.help;
   $('#btn-exit').innerHTML = ART.exit;
-  $('#coin-icon').innerHTML = ART.coin;
+  $('#coin-icon').innerHTML = ART.coin();
   $('#btn-rules').innerHTML = ART.help;
   $('#btn-leave-room').innerHTML = ART.exit;
   sound.restorePreference();
@@ -4899,7 +5016,14 @@ function boot() {
   $('#board-cells').addEventListener('click', onBoardClick);
   wireCoinRemoval($('#board-cells'));
   $('#board-overlay').addEventListener('click', (e) => {
-    if (e.target.closest('.queen.armed')) lockIn();
+    const queen = e.target.closest('.queen.armed');
+    if (!queen) return;
+    // Belt and braces: ignore anything that landed outside her own square.
+    const box = queen.getBoundingClientRect();
+    if (box.width && (e.clientX < box.left || e.clientX > box.right || e.clientY < box.top || e.clientY > box.bottom)) {
+      return;
+    }
+    lockIn();
   });
   $('#btn-exit').onclick = leaveToTitle;
 
@@ -4987,6 +5111,8 @@ async function copyLink(code) {
 }
 
 function leaveRoom() {
+  if (app.joinTimer) clearTimeout(app.joinTimer);
+  app.joinTimer = null;
   app.bridge?.dispose();
   app.net?.leave();
   app.bridge = null;

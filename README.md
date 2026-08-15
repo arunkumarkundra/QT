@@ -28,7 +28,7 @@ Pages branch and it works as-is; no build step is required for Pages, because
 
 ```bash
 npm install            # jsdom, for the UI tests only
-npm test               # all three suites — 130 assertions
+npm test               # all three suites — 132 assertions
 npm run test:rules     # the §23 rule suite alone, zero dependencies
 npm run simulate 200   # headless AI games, reports the §27 metrics
 npm run build          # regenerate dist/queens-tug.html from src/
@@ -105,14 +105,14 @@ client can send a malformed bid and get it rejected; it cannot send `"move Right
 
 ## Tests
 
-130 assertions across three suites. The rule suite has zero dependencies and
+132 assertions across three suites. The rule suite has zero dependencies and
 covers every bullet in §23, each tagged with its spec section.
 
 | Suite | Covers |
 | --- | --- |
 | `tests/engine.test.js` | 77 rule tests — placement, bidding, cancellation, boundary stopping, castles, bonus decay/collection/replacement, coin economy, the information boundary, determinism, the reveal. |
 | `tests/host.test.js` | 13 tests that the host behaves like a server: filtered reads, rejected outcomes, refused reveals, takeover reporting. |
-| `tests/ui.test.js` | 39 tests booting the built file in jsdom and playing a full game through the real DOM. |
+| `tests/ui.test.js` | 41 tests booting the built file in jsdom and playing a full game through the real DOM. |
 
 The UI tests check the *built* file, so a broken bundle fails the suite rather
 than shipping.
@@ -172,7 +172,7 @@ roughly doubled, and moving to a single 50-coin starting value (rather than a
 
 ## Playtest baseline
 
-200 AI-vs-AI games, 12×12, 50 coins:
+200 AI-vs-AI games, 12×12, 100 coins:
 
 | Metric | Value |
 | --- | --- |
@@ -234,13 +234,25 @@ enter the code) and their icon replaces a computer player in the seat row. Any
 seat still empty at kick-off is played by the computer, so you never have to
 wait for a full table. The host presses Start.
 
-**Caveat worth knowing:** peer-to-peer connectivity could not be exercised in
-the environment this was built in — the sandbox has no outbound WebRTC. The
-protocol, the seat assignment, the per-seat view filtering and the disconnect
-handling are all implemented and the code paths are exercised by the test
-suite, but the first real cross-device connection is the thing to verify
-before launch. Symmetric NATs may also need a TURN server; if you hit that,
-`TRYSTERO_URLS` and the relay config in `src/multiplayer.js` are where to look.
+**Diagnosing a failed connection.** The lobby reports which stage it reached,
+so the message tells you where it broke:
+
+| Message | Meaning |
+| --- | --- |
+| `Finding your game…` | Still loading the signalling library from a CDN. |
+| `Connected. Looking for the host…` | Relay reached; waiting for the host to answer. |
+| `You're in. Waiting for the host…` | Seated successfully. |
+| `Online play is unavailable…` | No relay could be reached at all. |
+| `Game not found…` | Relay fine, but nobody answered on that code within 20 seconds. |
+
+Seating is driven by an explicit greeting from the joiner rather than by
+connection events, and the host re-broadcasts the lobby every two seconds, so a
+peer that connects during a hiccup still gets seated.
+
+**Caveat worth knowing:** peer-to-peer connectivity cannot be exercised in the
+environment this was built in — the sandbox has no outbound WebRTC. Symmetric
+NATs may need a TURN server. `TRYSTERO_URLS` in `src/multiplayer.js` lists the
+relays and strategies tried, in order.
 
 ## What is not built
 

@@ -521,6 +521,11 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--gold-l
 
 .queen { z-index: 8; }
 .queen.armed { pointer-events: auto; cursor: pointer; }
+/**
+ * The "ready to lock" ring extends beyond the queen's own cell. It must never
+ * take pointer events, or it swallows clicks aimed at the cells beside her —
+ * which is exactly why some directions stopped accepting coins.
+ */
 .queen.armed::after {
   content: '';
   position: absolute;
@@ -528,7 +533,12 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--gold-l
   border-radius: 50%;
   border: 2px dashed rgba(255, 226, 150, .55);
   animation: arm-spin 9s linear infinite;
+  pointer-events: none;
 }
+/* Only the queen artwork itself is clickable, and only within her own cell. */
+.queen.armed svg { pointer-events: auto; cursor: pointer; }
+.queen.armed { pointer-events: none; }
+.queen .queen-glow { pointer-events: none; }
 .queen.armed:hover::after { border-color: var(--gold-lt); border-style: solid; }
 @keyframes arm-spin { to { transform: rotate(360deg); } }
 .queen svg { width: 84%; height: 84%; filter: drop-shadow(0 0 10px rgba(255,220,140,.95)); }

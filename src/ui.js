@@ -36,22 +36,36 @@ const DIR_WORD = { UP: 'up', DOWN: 'down', LEFT: 'left', RIGHT: 'right' };
  * Artwork — inline SVG so there are no image requests
  * ------------------------------------------------------------------ */
 
+/**
+ * SVG gradients live in a document-wide id namespace. Four treasure stacks and
+ * a queen all declaring `id="tgTop"` meant the browser resolved every fill to
+ * whichever element happened to be first in the document — and when the replay
+ * cleared and rebuilt the overlay, those references broke and the shapes
+ * rendered unfilled. That is the "ghost" queen and the dark treasure. Every
+ * instance now mints its own ids.
+ */
+let artSeq = 0;
+const uid = (prefix) => `${prefix}${(artSeq += 1)}`;
+
 const ART = {
-  queen: `<svg viewBox="0 0 40 46" aria-hidden="true">
+  queen: () => {
+    const g = uid('qg');
+    return `<svg viewBox="0 0 40 46" aria-hidden="true">
     <defs>
-      <linearGradient id="qgold" x1="0" y1="0" x2="0" y2="1">
+      <linearGradient id="${g}" x1="0" y1="0" x2="0" y2="1">
         <stop offset="0" stop-color="#fffbf0"/><stop offset=".45" stop-color="#f2d492"/><stop offset="1" stop-color="#b98d33"/>
       </linearGradient>
     </defs>
     <g stroke="#5c4416" stroke-width="1.1" stroke-linejoin="round">
-      <path fill="url(#qgold)" d="M6 13 3 4l7.5 5L15 1.5 20 8l5-6.5L29.5 9 37 4l-3 9a5 5 0 0 1-1.4 2.4l-1.6 6.6H9L7.4 15.4A5 5 0 0 1 6 13z"/>
+      <path fill="url(#${g})" d="M6 13 3 4l7.5 5L15 1.5 20 8l5-6.5L29.5 9 37 4l-3 9a5 5 0 0 1-1.4 2.4l-1.6 6.6H9L7.4 15.4A5 5 0 0 1 6 13z"/>
       <circle cx="3" cy="4" r="2.2" fill="#fff6dd"/><circle cx="37" cy="4" r="2.2" fill="#fff6dd"/>
       <circle cx="20" cy="6.5" r="2.4" fill="#fff6dd"/>
-      <rect x="8" y="21" width="24" height="3.6" rx="1.4" fill="url(#qgold)"/>
-      <path fill="url(#qgold)" d="M11 25h18l2.6 11H8.4z"/>
-      <rect x="5" y="36" width="30" height="6" rx="2.2" fill="url(#qgold)"/>
+      <rect x="8" y="21" width="24" height="3.6" rx="1.4" fill="url(#${g})"/>
+      <path fill="url(#${g})" d="M11 25h18l2.6 11H8.4z"/>
+      <rect x="5" y="36" width="30" height="6" rx="2.2" fill="url(#${g})"/>
     </g>
-  </svg>`,
+  </svg>`;
+  },
 
   castle: (color) => `<svg viewBox="0 0 36 34" aria-hidden="true">
     <g stroke="rgba(0,0,0,.55)" stroke-width="1.1" stroke-linejoin="round">
@@ -62,42 +76,49 @@ const ART = {
   </svg>`,
 
   /** A struck gold coin, milled edge and all. */
-  coin: `<svg viewBox="0 0 40 40" aria-hidden="true">
+  coin: () => {
+    const g = uid('cf');
+    return `<svg viewBox="0 0 40 40" aria-hidden="true">
     <defs>
-      <radialGradient id="cface" cx="36%" cy="30%">
+      <radialGradient id="${g}" cx="36%" cy="30%">
         <stop offset="0" stop-color="#fff6d8"/><stop offset=".5" stop-color="#eec867"/><stop offset="1" stop-color="#a97d22"/>
       </radialGradient>
     </defs>
     <circle cx="20" cy="20" r="19" fill="#7d5a17"/>
     <circle cx="20" cy="20" r="19" fill="none" stroke="#5c4416" stroke-width="1.4" stroke-dasharray="1.6 1.6"/>
-    <circle cx="20" cy="19.2" r="17" fill="url(#cface)"/>
+    <circle cx="20" cy="19.2" r="17" fill="url(#${g})"/>
     <circle cx="20" cy="19.2" r="13.4" fill="none" stroke="#a97d22" stroke-width="1.1" opacity=".65"/>
     <path fill="#8a6420" opacity=".8" d="M13 23.5 11.7 14l4.9 3.5L20 11.4l3.4 6.1 4.9-3.5-1.3 9.5z"/>
-  </svg>`,
+  </svg>`;
+  },
 
   /**
    * A neat stack of identical coins seen slightly from above. Every coin is
    * the same size — an uneven pile reads as a mistake rather than as treasure.
    */
-  treasure: `<svg viewBox="0 0 44 44" aria-hidden="true">
+  treasure: () => {
+    const top = uid('tt');
+    const edge = uid('te');
+    return `<svg viewBox="0 0 44 44" aria-hidden="true">
     <defs>
-      <linearGradient id="tgTop" x1="0" y1="0" x2="1" y2="1">
+      <linearGradient id="${top}" x1="0" y1="0" x2="1" y2="1">
         <stop offset="0" stop-color="#fff3cf"/><stop offset=".5" stop-color="#eec867"/><stop offset="1" stop-color="#b58a2c"/>
       </linearGradient>
-      <linearGradient id="tgEdge" x1="0" y1="0" x2="0" y2="1">
+      <linearGradient id="${edge}" x1="0" y1="0" x2="0" y2="1">
         <stop offset="0" stop-color="#d9a441"/><stop offset="1" stop-color="#7d5a17"/>
       </linearGradient>
     </defs>
     <g stroke="#5c4416" stroke-width="1.1" stroke-linejoin="round">
       ${[30.5, 25.5, 20.5, 15.5]
         .map(
-          (cy) => `<path fill="url(#tgEdge)" d="M6 ${cy} a16 5.4 0 0 0 32 0 v-3.4 a16 5.4 0 0 1-32 0 z"/>
-                   <ellipse cx="22" cy="${cy - 3.4}" rx="16" ry="5.4" fill="url(#tgTop)"/>`
+          (cy) => `<path fill="url(#${edge})" d="M6 ${cy} a16 5.4 0 0 0 32 0 v-3.4 a16 5.4 0 0 1-32 0 z"/>
+                   <ellipse cx="22" cy="${cy - 3.4}" rx="16" ry="5.4" fill="url(#${top})"/>`
         )
         .join('')}
       <ellipse cx="22" cy="12.1" rx="10.6" ry="3.4" fill="none" stroke="#b58a2c" stroke-width=".9" opacity=".75"/>
     </g>
-  </svg>`,
+  </svg>`;
+  },
 
   human: `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
     <circle cx="12" cy="7.6" r="4.1"/>
@@ -219,7 +240,7 @@ function ensureQueen(overlay) {
   if (!q) {
     q = el('div', 'marker queen');
     q.id = 'queen';
-    q.innerHTML = `<div class="queen-glow"></div>${ART.queen}`;
+    q.innerHTML = `<div class="queen-glow"></div>${ART.queen()}`;
     overlay.appendChild(q);
   }
   return q;
@@ -394,6 +415,8 @@ async function prepareHostLobby() {
       code: app.code,
       isHost: true,
       onEvent: (e) => {
+        // The authoritative seating signal is the joiner's greeting, handled
+        // inside the bridge. This is a backup for peers that connect quietly.
         if (e.type === 'peer-join') {
           const seat = app.bridge?.admit(e.peerId);
           if (seat !== null && seat !== undefined) sound.play('join');
@@ -427,30 +450,51 @@ async function prepareJoinLobby(code) {
   renderRoomSeats({ seats: [0, 1, 2, 3].map((seat) => ({ seat, kind: 'bot' })) }, -1);
 
   leaveRoom();
-  try {
-    app.net = await openRoom({ code, isHost: false, onEvent: () => {} });
 
-    const remote = createRemoteGame({ net: app.net });
-    app.game = remote;
-
-    app.net.onLobby((lobby) => {
-      renderRoomSeats(lobby, remote.getSeat?.() ?? -1);
-      $('#room-status').textContent = "You're in. Waiting for the host…";
-      sound.play('join');
-    });
-
-    const unsub = remote.subscribe(() => {
-      if (remote.getView() && $('#screen-game').hidden) {
-        unsub();
-        mountGame(remote, remote.getSeat());
-      }
-    });
-  } catch {
-    $('#room-status').textContent =
-      'Game not found. Check the code or start a new game.';
+  let seated = false;
+  /** If the host never answers, say so rather than spinning forever. */
+  const giveUp = setTimeout(() => {
+    if (seated) return;
+    $('#room-status').textContent = 'Game not found. Check the code or start a new game.';
     $('#room-status').classList.add('error');
     setLobbyMode('host');
+  }, 20000);
+  app.joinTimer = giveUp;
+
+  try {
+    app.net = await openRoom({ code, isHost: false, onEvent: () => {} });
+  } catch {
+    clearTimeout(giveUp);
+    $('#room-status').textContent = "Online play is unavailable. You can still play against the court's bots.";
+    $('#room-status').classList.add('error');
+    setLobbyMode('host');
+    return;
   }
+
+  $('#room-status').textContent = 'Connected. Looking for the host…';
+
+  const remote = createRemoteGame({ net: app.net });
+  app.game = remote;
+
+  app.net.onLobby((lobby) => {
+    if (!seated) {
+      seated = true;
+      clearTimeout(giveUp);
+      sound.play('join');
+    }
+    app.lobby = lobby;
+    $('#room-status').classList.remove('error');
+    $('#room-status').textContent = "You're in. Waiting for the host…";
+    renderRoomSeats(lobby, remote.getSeat?.() ?? -1);
+  });
+
+  const unsub = remote.subscribe(() => {
+    if (remote.getView() && $('#screen-game').hidden) {
+      unsub();
+      clearTimeout(giveUp);
+      mountGame(remote, remote.getSeat());
+    }
+  });
 }
 
 /** The host presses Start. Anyone seated comes along; empty seats stay AI. */
@@ -554,7 +598,7 @@ function renderMarkers(view) {
     const mark = el('div', 'bonus-mark');
     mark.classList.add('marker');
     if (b.reward <= 12) mark.classList.add('fading');
-    mark.innerHTML = `<div class="bonus-pile"><div class="glow"></div>${ART.treasure}<span class="value num">${b.reward}</span></div>`;
+    mark.innerHTML = `<div class="bonus-pile"><div class="glow"></div>${ART.treasure()}<span class="value num">${b.reward}</span></div>`;
     placeMarker(mark, b.position);
     mark.title = 'Your treasure — land exactly here to claim it';
     overlay.appendChild(mark);
@@ -599,7 +643,7 @@ function renderTargets(view) {
       const stack = el('div', 'coin-stack');
       // The disc was previously empty, which is why staked coins read as a
       // plain coloured box. It carries the struck-coin artwork now.
-      stack.appendChild(el('span', 'disc', ART.coin));
+      stack.appendChild(el('span', 'disc', ART.coin()));
       stack.appendChild(el('span', 'count num', String(staked)));
       cell.appendChild(stack);
     } else if (canPlan) {
@@ -612,7 +656,7 @@ function renderTargets(view) {
 function renderPurse(view) {
   const purse = $('#purse');
   const icon = $('#coin-icon');
-  if (icon && !icon.firstChild) icon.innerHTML = ART.coin;
+  if (icon && !icon.firstChild) icon.innerHTML = ART.coin();
   const value = $('#purse-value');
   const balance = view.you.coinsRemaining;
   if (app.lastBalance !== null && balance !== app.lastBalance) {
@@ -997,7 +1041,7 @@ function drawReplayFrame(n, partialSteps = null) {
     if (!b || b.reward <= 0) continue;
     const mark = el('div', 'marker bonus-mark');
     mark.style.setProperty('--seat', SEAT_COLORS[b.seat]);
-    mark.innerHTML = `<div class="bonus-ring"></div><div class="bonus-pile">${ART.treasure}<span class="value num">${b.reward}</span></div>`;
+    mark.innerHTML = `<div class="bonus-ring"></div><div class="bonus-pile">${ART.treasure()}<span class="value num">${b.reward}</span></div>`;
     placeMarker(mark, b.position);
     overlay.appendChild(mark);
   }
@@ -1010,7 +1054,7 @@ function drawReplayFrame(n, partialSteps = null) {
 
   const queen = el('div', 'marker queen solid');
   queen.id = 'replay-queen';
-  queen.innerHTML = `<div class="queen-glow"></div><div class="queen-plinth"></div>${ART.queen}`;
+  queen.innerHTML = `<div class="queen-glow"></div><div class="queen-plinth"></div>${ART.queen()}`;
   placeMarker(queen, pts[pts.length - 1] || reveal.completeQueenPath[0]);
   overlay.appendChild(queen);
 
@@ -1229,7 +1273,7 @@ function boot() {
 
   $('#btn-help').innerHTML = ART.help;
   $('#btn-exit').innerHTML = ART.exit;
-  $('#coin-icon').innerHTML = ART.coin;
+  $('#coin-icon').innerHTML = ART.coin();
   $('#btn-rules').innerHTML = ART.help;
   $('#btn-leave-room').innerHTML = ART.exit;
   sound.restorePreference();
@@ -1301,7 +1345,14 @@ function boot() {
   $('#board-cells').addEventListener('click', onBoardClick);
   wireCoinRemoval($('#board-cells'));
   $('#board-overlay').addEventListener('click', (e) => {
-    if (e.target.closest('.queen.armed')) lockIn();
+    const queen = e.target.closest('.queen.armed');
+    if (!queen) return;
+    // Belt and braces: ignore anything that landed outside her own square.
+    const box = queen.getBoundingClientRect();
+    if (box.width && (e.clientX < box.left || e.clientX > box.right || e.clientY < box.top || e.clientY > box.bottom)) {
+      return;
+    }
+    lockIn();
   });
   $('#btn-exit').onclick = leaveToTitle;
 
@@ -1389,6 +1440,8 @@ async function copyLink(code) {
 }
 
 function leaveRoom() {
+  if (app.joinTimer) clearTimeout(app.joinTimer);
+  app.joinTimer = null;
   app.bridge?.dispose();
   app.net?.leave();
   app.bridge = null;
