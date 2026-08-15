@@ -28,7 +28,7 @@ Pages branch and it works as-is; no build step is required for Pages, because
 
 ```bash
 npm install            # jsdom, for the UI tests only
-npm test               # all three suites — 112 assertions
+npm test               # all three suites — 117 assertions
 npm run test:rules     # the §23 rule suite alone, zero dependencies
 npm run simulate 200   # headless AI games, reports the §27 metrics
 npm run build          # regenerate dist/queens-tug.html from src/
@@ -46,9 +46,11 @@ Opposite directions cancel. The strongest survivor drags the queen that many
 cells, stopping at the wall. Win by making her **finish** a move on your castle.
 
 **The board is the controller.** There is no bidding panel. Tapping a cell adds
-one coin; tapping the *opposite* cell takes one back off the pile — pulling the
-other way is the natural undo, and it means you can never waste coins paying in
-two opposite directions at once. Arrow keys do the same thing; Enter locks in.
+one coin; tapping the *opposite* cell takes one back off the pile. When the
+queen stands against a wall there is no opposite cell, so the undo button beside
+the coin balance always works too. **Tap the queen herself to lock in** — with
+nothing staked, that is how you pass. Arrow keys stake, Backspace undoes, Enter
+locks.
 
 **Tuning lives in `src/config.js`**, not in a settings screen: `startingCoins`,
 `replenishCoins`, `bonusStartReward`, `decisionTimerMs`, `boardWidth/Height`.
@@ -82,6 +84,7 @@ Human UI    AI
 | `src/playerView.js` | The information boundary. Builds up permitted fields; never deletes from a copy. |
 | `src/ai.js` | Computer player. Its only game input is a PlayerView. |
 | `src/sound.js` | WebAudio synthesis. No audio files. |
+| `src/multiplayer.js` | Peer-to-peer transport. The only file that knows a network exists. |
 | `src/host.js` | The authoritative "server". Owns state, runs the clock, accepts intent only. |
 | `src/ui.js` | Renders views, collects input. Contains no rules. |
 
@@ -98,14 +101,14 @@ client can send a malformed bid and get it rejected; it cannot send `"move Right
 
 ## Tests
 
-112 assertions across three suites. The rule suite has zero dependencies and
+117 assertions across three suites. The rule suite has zero dependencies and
 covers every bullet in §23, each tagged with its spec section.
 
 | Suite | Covers |
 | --- | --- |
 | `tests/engine.test.js` | 77 rule tests — placement, bidding, cancellation, boundary stopping, castles, bonus decay/collection/replacement, coin economy, the information boundary, determinism, the reveal. |
 | `tests/host.test.js` | 13 tests that the host behaves like a server: filtered reads, rejected outcomes, refused reveals, takeover reporting. |
-| `tests/ui.test.js` | 21 tests booting the built file in jsdom and playing a full game through the real DOM. |
+| `tests/ui.test.js` | 26 tests booting the built file in jsdom and playing a full game through the real DOM. |
 
 The UI tests check the *built* file, so a broken bundle fails the suite rather
 than shipping.
@@ -186,16 +189,62 @@ need real people.
 
 ---
 
+## Multiplayer
+
+Real online play works, with no server and no hosting bill.
+
+GitHub Pages cannot run a backend, but WebRTC only needs a *signalling* channel
+to introduce two browsers to each other. [Trystero](https://github.com/dmotz/trystero)
+provides that over public relays; after the handshake, players are connected
+directly. The library is loaded lazily from a CDN, so solo play never pays for
+it and the game still opens if the CDN is unreachable.
+
+**The topology is host-authoritative**, which is why almost no game code
+changed:
+
+```
+Creator's browser                       Joiner's browser
+┌────────────────────┐   PlayerView     ┌──────────────────┐
+│ createHost()       ├─────────────────►│ remote proxy     │
+│ authoritative state│                  │ one view, no more│
+│                    │◄─────────────────┤                  │
+└────────────────────┘   bid intent     └──────────────────┘
+```
+
+The creator runs the real engine. Everyone else holds nothing but the
+PlayerView the host chose to send them — `src/multiplayer.js` calls
+`host.getView(seat)` per peer and sends each result to exactly one connection.
+This is the §14.1 boundary enforced across a network: a joiner's machine never
+receives another player's castle, treasure, balance or bid, so a tampered
+client has nothing to reveal. Peers can only send intents (`stake one coin
+left`, `lock`); no message exists that moves the queen, so a hostile peer
+cannot fabricate an outcome.
+
+Disconnects reuse the takeover rule already in the engine: a vanished peer's
+seat flips to computer control immediately so the round can still resolve, and
+the other players are told.
+
+**How to play together:** one person picks *Play with friends* and shares the
+code or link; others pick *Join with a code* (or just open the link). Seats
+fill as people arrive, and any seat still empty at kick-off is played by the
+computer. The host presses Start.
+
+**Caveat worth knowing:** peer-to-peer connectivity could not be exercised in
+the environment this was built in — the sandbox has no outbound WebRTC. The
+protocol, the seat assignment, the per-seat view filtering and the disconnect
+handling are all implemented and the code paths are exercised by the test
+suite, but the first real cross-device connection is the thing to verify
+before launch. Symmetric NATs may also need a TURN server; if you hit that,
+`TRYSTERO_URLS` and the relay config in `src/multiplayer.js` are where to look.
+
 ## What is not built
 
-**Real online multiplayer.** §14 is explicit that GitHub Pages alone cannot
-provide it, and that a shared authoritative state mechanism must be identified
-first. The architecture is ready for it — `host.js` is already a server that
-happens to run locally, and every read is already filtered — but the transport
-does not exist yet. See `TRANSPORT.md` for what remains and why the current code
-does not have to change to get there.
 
-Everything through step 21 of §25's development sequence is complete. Steps
-17–18 (multiplayer sync, disconnect handling) are implemented at the state-model
-level — takeover, `PlayerView` parity, safe-boundary reconnection and their
-tests are all present — but not over a network.
+**A dedicated relay.** Signalling currently rides public Nostr relays. That is
+fine for launch and costs nothing, but a busy game would want its own signalling
+server and a TURN fallback for restrictive networks. `TRANSPORT.md` sketches
+what that looks like; the game code would not change, because the transport is
+already isolated behind `src/multiplayer.js`.
+
+**Spectators and reconnection into a running game.** A dropped player's seat is
+covered by the computer, but they cannot currently take it back mid-game.

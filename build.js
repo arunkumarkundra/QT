@@ -25,6 +25,7 @@ const MODULE_ORDER = [
   'src/ai.js',
   'src/sound.js',
   'src/host.js',
+  'src/multiplayer.js',
   'src/ui.js',
 ];
 

@@ -19,10 +19,26 @@
   <section id="screen-title" class="screen title-screen">
     <div class="title-inner">
       <img class="title-art" src="./assets/logo.webp" alt="Queen's Tug — four hidden castles, one wandering queen, every move is a secret battle">
-      <div class="title-menu">
-        <button class="btn btn-gold btn-lg" id="btn-play">Play</button>
+      <div class="title-menu" id="title-menu">
+        <button class="btn btn-gold btn-lg" id="btn-solo">Play solo</button>
+        <button class="btn" id="btn-friends">Play with friends</button>
         <button class="btn" id="btn-join">Join with a code</button>
         <button class="btn btn-ghost" id="btn-rules">How to play</button>
+      </div>
+
+      <!-- room panel: same screen, no navigation -->
+      <div class="room-panel" id="room-panel" hidden>
+        <div class="room-seats" id="room-seats"></div>
+        <p class="room-status" id="room-status">Connecting…</p>
+        <div class="code-block">
+          <span class="code-label">Game code</span>
+          <span class="code-value" id="room-code">QT-000000</span>
+          <div class="code-actions">
+            <button class="btn btn-ghost btn-sm" id="btn-room-copy">Copy link</button>
+          </div>
+        </div>
+        <button class="btn btn-gold btn-lg" id="btn-room-start">Start the game</button>
+        <button class="btn btn-ghost btn-sm" id="btn-room-back">Back</button>
       </div>
     </div>
   </section>
@@ -40,7 +56,12 @@
       </div>
 
       <div class="seat-strip">
-        <div id="seat-chips" style="display:flex;gap:8px;flex:1;min-width:0"></div>
+        <div class="seat-group" id="seat-chips"></div>
+        <div class="purse" id="purse">
+          <span class="coin-icon" id="coin-icon"></span>
+          <span class="value num" id="purse-value">50</span>
+          <button class="undo" id="btn-undo" aria-label="Take back a coin" disabled></button>
+        </div>
         <div class="timer" id="timer">
           <svg viewBox="0 0 44 44" aria-hidden="true">
             <circle class="track" cx="22" cy="22" r="18" fill="none" stroke-width="3.5"></circle>
@@ -54,35 +75,15 @@
         <div class="board-plate">
           <div class="board" id="board">
             <div class="board-cells" id="board-cells"></div>
+            <div class="board-grid-lines"></div>
             <svg class="path-layer" id="path-layer" aria-hidden="true"></svg>
             <div class="board-overlay" id="board-overlay"></div>
             <div class="wall-flash" id="wall-flash"></div>
 
             <!-- shown before the game starts -->
-            <div class="pregame" id="pregame">
-              <div class="pregame-inner">
-                <p class="lede" id="pregame-lede">Three computer opponents are ready. Share the code to let friends take their seats.</p>
-                <button class="btn btn-gold btn-lg" id="btn-start">Start the game</button>
-                <div class="code-block">
-                  <span class="code-label">Game code</span>
-                  <span class="code-value" id="game-code">QT-000000</span>
-                  <div class="code-actions">
-                    <button class="btn btn-ghost btn-sm" id="btn-copy">Copy link</button>
-                    <button class="btn btn-ghost btn-sm" id="btn-newcode">New board</button>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <div class="pregame" id="pregame" hidden></div>
           </div>
         </div>
-      </div>
-
-      <div class="action-row">
-        <div class="purse" id="purse">
-          <span class="coin-icon"></span>
-          <span class="value num" id="purse-value">50</span>
-        </div>
-        <button class="btn btn-gold btn-lock" id="btn-lock" disabled>Lock in</button>
       </div>
 
       <div class="status" id="status"></div>
@@ -105,16 +106,11 @@
         <h2 id="winner-text">Winner</h2>
       </div>
 
-      <div class="result-stats">
-        <span><b id="stat-rounds">0</b> rounds</span>
-        <span><b id="stat-cells">0</b> cells travelled</span>
-        <span><b id="stat-bonus">0</b> bonuses claimed</span>
-      </div>
-
       <div class="board-wrap">
         <div class="board-plate">
           <div class="board" id="replay-board">
             <div class="board-cells" id="replay-cells"></div>
+            <div class="board-grid-lines"></div>
             <svg class="path-layer" id="replay-path" aria-hidden="true"></svg>
             <div class="board-overlay" id="replay-overlay"></div>
           </div>
@@ -126,6 +122,8 @@
         <input type="range" id="replay-slider" min="0" max="1" value="1" aria-label="Scrub through the game">
         <span class="round-label num" id="replay-label">0 / 0</span>
       </div>
+
+      <div class="status" id="result-status"></div>
     </div>
   </section>
 

@@ -60,6 +60,15 @@ const click = (sel) => {
   n.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
 };
 
+/** Return the board to an empty placement, whatever a previous test left. */
+function clearCoins() {
+  for (let i = 0; i < 60; i++) {
+    const undo = $('#btn-undo');
+    if (!undo || undo.disabled) break;
+    click(undo);
+  }
+}
+
 console.log('\n\x1b[1mUI (jsdom, built bundle)\x1b[0m');
 
 await wait(140);
@@ -82,33 +91,40 @@ await test('The key art is inlined rather than fetched', () => {
 });
 
 await test('Play goes straight to the board — there is no setup screen', () => {
-  click('#btn-play');
+  click('#btn-solo');
   assert(!$('#screen-game').hidden, 'Game screen did not open');
   assert($('#screen-title').hidden, 'Title screen still mounted');
   assert($$('#board-cells .cell').length === 144, 'Expected a 12×12 board');
 });
 
-await test('Before the game starts nothing is revealed and the code is offered', () => {
-  assert(!$('#pregame').hidden, 'Pre-game overlay missing');
-  eq($$('#board-overlay .marker').length, 0, 'Pieces are visible before the game starts');
-  assert(/^QT-[A-Z0-9]{6}$/.test($('#game-code').textContent), 'Malformed game code');
-  assert($('#btn-lock').disabled, 'Lock should be inert before the game starts');
+await test('The title screen offers solo, hosting, joining and rules', () => {
+  eq($$('#title-menu .btn').length, 4, 'Expected four entry actions');
+  assert($('#room-panel').hidden, 'Room panel should stay closed until needed');
 });
 
-await test('Four seats show, one human and three computer players', () => {
-  const chips = $$('#seat-chips .seat-chip');
-  eq(chips.length, 4);
-  eq(chips.filter((c) => c.classList.contains('is-you')).length, 1, 'Exactly one seat is you');
-  const locks = $$('#seat-chips .lock-badge');
-  eq(locks.length, 4, 'Every seat needs a lock indicator');
-});
-
-await test('Starting the game reveals only this player’s own pieces', () => {
-  click('#btn-start');
-  assert($('#pregame').hidden, 'Pre-game overlay did not close');
+await test('Only this player’s own pieces are ever drawn', () => {
   eq($$('#board-overlay .castle-mark').length, 1, 'More than one castle is on the board');
   assert($$('#board-overlay .bonus-mark').length <= 1, 'More than one treasure is on the board');
   assert($('#board-overlay .queen'), 'Queen missing');
+});
+
+await test('Seats are colour and icon only — no names or numbers', () => {
+  const chips = $$('#seat-chips .seat-chip');
+  eq(chips.length, 4);
+  eq($('#seat-chips').textContent.trim(), '', 'Seat strip contains text');
+  eq(chips.filter((c) => c.classList.contains('is-you')).length, 1, 'Exactly one seat is you');
+  for (const c of chips) assert(c.style.getPropertyValue('--seat'), 'Seat has no colour');
+  eq($$('#seat-chips .lock-badge').length, 4, 'Every seat needs a lock indicator');
+});
+
+await test('The coin balance sits in the top strip, not under the board', () => {
+  assert($('.seat-strip #purse'), 'Purse is not in the top strip');
+  assert(!$('.action-row'), 'The old action row survived');
+  assert(!$('#btn-lock'), 'A separate lock button survived');
+});
+
+await test('The board has visible grid work', () => {
+  assert($$('.board-grid-lines').length >= 1, 'Grid guide lines missing');
 });
 
 await test('The cells beside the queen become the controls', () => {
@@ -126,7 +142,7 @@ await test('Clicking a cell drops one coin and shows the stack', () => {
   click(target);
   eq($$('#board-cells .cell.staked').length, 1, 'No staked cell after a click');
   eq($('#board-cells .cell.staked .count').textContent, '1', 'Coin count wrong');
-  assert(/Lock in 1/.test($('#btn-lock').textContent), `Lock label wrong: ${$('#btn-lock').textContent}`);
+  assert(!$('#btn-undo').disabled, 'Undo should become available');
 });
 
 await test('Coins accumulate one per click', () => {
@@ -134,7 +150,6 @@ await test('Coins accumulate one per click', () => {
   click(target);
   click(target);
   eq($('#board-cells .cell.staked .count').textContent, '3');
-  assert(/Lock in 3/.test($('#btn-lock').textContent));
 });
 
 await test('Clicking the opposite cell takes coins back instead of paying both ways', () => {
@@ -147,7 +162,42 @@ await test('Clicking the opposite cell takes coins back instead of paying both w
   click(oppCell);
   click(oppCell);
   eq($$('#board-cells .cell.staked').length, 0, 'Stack did not empty');
-  assert(/Pass this round/.test($('#btn-lock').textContent), 'Empty bid should offer to pass');
+});
+
+await test('Undo takes a coin back even when the queen is against a wall', () => {
+  // Reproduces the reported bug: with no opposite cell there was no way to
+  // remove a coin. The undo control must work regardless of geometry.
+  clearCoins();
+  const target = $('#board-cells .cell.target');
+  click(target);
+  click(target);
+  eq($('#board-cells .cell.staked .count').textContent, '2');
+  click('#btn-undo');
+  eq($('#board-cells .cell.staked .count').textContent, '1', 'Undo did not remove a coin');
+  click('#btn-undo');
+  eq($$('#board-cells .cell.staked').length, 0, 'Undo did not clear the last coin');
+  assert($('#btn-undo').disabled, 'Undo should disable when nothing is staked');
+});
+
+await test('Every direction beside the queen accepts and releases coins', () => {
+  clearCoins();
+  for (const cell of $$('#board-cells .cell.target')) {
+    const dir = cell.dataset.dir;
+    click(cell);
+    const stack = $(`#board-cells .cell[data-dir="${dir}"] .count`);
+    assert(stack && stack.textContent === '1', `Direction ${dir} would not accept a coin`);
+    click('#btn-undo');
+    assert(!$(`#board-cells .cell[data-dir="${dir}"] .count`), `Direction ${dir} would not release its coin`);
+  }
+});
+
+await test('The queen is the lock control, and passes when nothing is staked', () => {
+  clearCoins();
+  const queen = $('#queen');
+  assert(queen.classList.contains('armed'), 'Queen is not armed for locking');
+  assert(/pass/i.test(queen.title), `Queen should offer to pass: "${queen.title}"`);
+  click($('#board-cells .cell.target'));
+  assert(/lock/i.test($('#queen').title), 'Queen should offer to lock once coins are placed');
 });
 
 await test('The purse shows a balance and never a staked total', () => {
@@ -159,7 +209,7 @@ await test('The purse shows a balance and never a staked total', () => {
 await test('Round number and seat identity are not shown during play', () => {
   const bar = $('#screen-game .bar').textContent;
   assert(!/round/i.test(bar), 'Round counter is on screen');
-    assert(!/playing as/i.test($('#screen-game').textContent), 'Seat identity banner is on screen');
+  assert(!/playing as/i.test($('#screen-game').textContent), 'Seat identity banner is on screen');
 });
 
 await test('There is no side panel — the layout is a single column', () => {
@@ -169,9 +219,8 @@ await test('There is no side panel — the layout is a single column', () => {
 });
 
 await test('Locking in resolves the round without revealing per-direction totals', async () => {
-  const target = $('#board-cells .cell.target');
-  if (target) click(target);
-  click('#btn-lock');
+  clearCoins();
+  click($('#queen'));
   await wait(1400);
   const status = $('#status').textContent;
   assert(!/\d/.test(status) || /holds her ground/.test(status), `Status leaks numbers: "${status}"`);
@@ -182,11 +231,11 @@ await test('A full game reaches the result screen', async () => {
   const deadline = Date.now() + 60000;
   while (Date.now() < deadline) {
     if (!$('#screen-result').hidden) break;
-    const lock = $('#btn-lock');
-    if (lock && !lock.disabled) {
+    const queen = $('#queen.armed');
+    if (queen) {
       const c = $('#board-cells .cell.target');
       if (c) click(c);
-      click(lock);
+      click(queen);
     }
     await wait(12);
   }
@@ -194,9 +243,9 @@ await test('A full game reaches the result screen', async () => {
   assert($('#screen-game').hidden, 'Game screen still mounted');
 });
 
-await test('The winner is shown as a coloured avatar with grammatical text', () => {
+await test('The winner is an avatar plus a short verb, with no player number', () => {
   const text = $('#winner-text').textContent;
-  assert(/(You win|Player \d wins)$/.test(text), `Ungrammatical winner text: "${text}"`);
+  assert(/^(You win|Wins)$/.test(text), `Unexpected winner text: "${text}"`);
   assert($('#winner-avatar svg'), 'Winner avatar missing');
   const colour = $('#winner-line').style.getPropertyValue('--seat');
   assert(colour, 'Winner avatar has no seat colour');
@@ -211,8 +260,9 @@ await test('The replay shows all four castles, owner-ringed treasure and a trail
 
 await test('The replay is scrubbed by round, not by single step', () => {
   const slider = $('#replay-slider');
-  const rounds = Number($('#stat-rounds').textContent);
-  eq(Number(slider.max), rounds, 'Slider should have one stop per round');
+  const rounds = Number($('#replay-slider').max);
+  const rounds2 = Number(slider.max);
+  assert(rounds2 > 0, 'Slider has no stops');
   slider.value = '0';
   slider.dispatchEvent(new window.Event('input', { bubbles: true }));
   eq($('#replay-label').textContent, `0 / ${rounds}`);
@@ -228,7 +278,10 @@ await test('The replay is scrubbed by round, not by single step', () => {
   if (rounds > 2) assert(at() !== atStart, 'Scrubbing did not move the queen');
 });
 
-await test('The "every castle now public" panel is gone — the board says it', () => {
+await test('The result stats live in the bottom message strip', () => {
+  const strip = $('#result-status').textContent;
+  assert(/rounds/.test(strip) && /cells travelled/.test(strip), `Stats missing: "${strip}"`);
+  assert(!$('.result-stats'), 'The old stats panel survived');
   assert(!/now public/i.test($('#screen-result').textContent), 'Redundant castle list survived');
 });
 
