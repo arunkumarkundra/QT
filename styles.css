@@ -358,8 +358,6 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--gold-l
   padding: 13px;
   border-radius: var(--r-lg);
   background:
-
-  background:
     linear-gradient(158deg, #39445c 0%, #232c3e 38%, #161c29 68%, #2d3749 100%);
   box-shadow:
     var(--shadow),
@@ -606,7 +604,18 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--gold-l
 
 .path-layer { position: absolute; inset: 0; pointer-events: none; z-index: 3; }
 
-.wall-flash { position: absolute; opacity: 0; z-index: 6; }
+/**
+ * The boundary flash is a decorative strip laid along whichever wall the queen
+ * hit. It is `position:absolute` with inline geometry, so it keeps covering
+ * ~10% of the board along that wall long after the animation has faded to
+ * opacity 0 — and at z-index 6 it sits ABOVE .board-cells.
+ *
+ * Without `pointer-events: none` it therefore eats every click aimed at the
+ * cells beside the queen once she is standing against that wall, which is
+ * exactly the "cannot stake in the legal directions next to a wall" bug.
+ * An invisible decoration must never be able to take a pointer event.
+ */
+.wall-flash { position: absolute; opacity: 0; z-index: 6; pointer-events: none; }
 .wall-flash.fire { animation: wall-hit .6s ease-out; }
 @keyframes wall-hit { 0% { opacity: .95; } 100% { opacity: 0; } }
 
@@ -948,3 +957,8 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--gold-l
   color: var(--gold-lt) !important;
   text-align: center;
 }
+
+/* A seat whose player left a humans-only game. Nobody is covering it, so it
+   must read as neither an active player nor a bot. */
+.seat-chip.retired { opacity: .32; filter: grayscale(1); }
+.seat-chip.retired .lock-badge { display: none; }
