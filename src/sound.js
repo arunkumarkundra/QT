@@ -17,17 +17,60 @@ const audio = {
   kicked: false,
   themeBus: null,
   pending: [],
+  /**
+   * Safari will not let an AudioContext created OUTSIDE a user gesture reach
+   * the `running` state, and once it has handed back a permanently-suspended
+   * context there is no way to rescue it. So construction is gated: nothing is
+   * created until `noteGesture()` has been called from a real input event.
+   */
+  gestureSeen: false,
+  /** The title theme wants to be playing; start it the moment we are able. */
+  themeWanted: false,
 };
 
 /**
- * Browsers refuse to start audio until a real user gesture, and Safari in
- * particular will hand back a context stuck in "suspended" or "interrupted"
- * that silently swallows everything scheduled on it. So: create on demand,
- * resume on EVERY call, and kick the hardware awake with a silent buffer the
- * first time. Cheap, and it removes an entire class of "no sound" bug.
+ * Called from real input handlers only. This is what unlocks construction.
+ * Safe and cheap to call on every gesture, which is exactly how it is wired.
  */
+function noteGesture() {
+  audio.gestureSeen = true;
+}
+
+/** Fire everything that was queued while the hardware was asleep. */
+function flushPending() {
+  if (!audio.ctx || audio.ctx.state !== 'running' || !audio.pending.length) return;
+  const queued = audio.pending.splice(0, audio.pending.length);
+  for (const [name, args] of queued) {
+    try {
+      RECIPES[name]?.(...args);
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+/**
+ * The context woke up. Anything that was waiting on it goes now.
+ *
+ * This callback is the whole fix for Safari. `resume()` is asynchronous, and
+ * Safari returns a context in `suspended` (or, after a phone call or a tab
+ * switch, `interrupted`) even when it is created inside a gesture. Code that
+ * checks `ctx.state === 'running'` immediately after calling `resume()` always
+ * loses that race, which is why the first click produced no sound and the
+ * theme never began. Reacting to `statechange` instead of guessing removes the
+ * race entirely.
+ */
+function onContextRunning() {
+  if (!audio.ctx || audio.ctx.state !== 'running') return;
+  flushPending();
+  if (audio.themeWanted && !audio.muted && !themePlaying) startThemeNow();
+}
+
 function ensureContext() {
   if (!audio.ctx) {
+    // No gesture yet: refuse to construct. A context built at page load is a
+    // context Safari will never let us use.
+    if (!audio.gestureSeen) return null;
     const Ctx = typeof window !== 'undefined' && (window.AudioContext || window.webkitAudioContext);
     if (!Ctx) return null;
     try {
@@ -44,31 +87,35 @@ function ensureContext() {
     audio.themeBus.gain.value = 1;
     audio.themeBus.connect(audio.master);
     audio.ready = true;
+
+    try {
+      audio.ctx.onstatechange = onContextRunning;
+      audio.ctx.addEventListener?.('statechange', onContextRunning);
+    } catch {
+      /* older engines: the resume().then path below still covers us */
+    }
   }
 
+  // 'suspended' is the autoplay lock; 'interrupted' is Safari after a call,
+  // an alarm, or a background tab. Both are cured by resume().
   if (audio.ctx.state !== 'running') {
     try {
       const resumed = audio.ctx.resume();
-      if (resumed && typeof resumed.catch === 'function') resumed.catch(() => {});
+      if (resumed && typeof resumed.then === 'function') {
+        resumed.then(onContextRunning, () => {});
+      }
     } catch {
       /* nothing more we can do */
     }
   }
 
-  // Anything scheduled while the context was asleep is lost, so hold sounds
-  // back until the hardware is genuinely running and replay them on wake.
-  if (audio.ctx.state === 'running' && audio.pending.length) {
-    const queued = audio.pending.splice(0, audio.pending.length);
-    for (const [name, args] of queued) {
-      try {
-        RECIPES[name]?.(...args);
-      } catch {
-        /* ignore */
-      }
-    }
-  }
+  flushPending();
 
-  if (!audio.kicked) {
+  if (!audio.kicked && audio.ctx.state === 'running') {
+    // A one-sample buffer played from inside the gesture is what actually
+    // convinces iOS the page is allowed to make noise. Doing it while the
+    // context is still suspended wastes the only chance we get, so it waits
+    // until the hardware is genuinely running.
     audio.kicked = true;
     try {
       const buf = audio.ctx.createBuffer(1, 1, audio.ctx.sampleRate);
@@ -373,23 +420,34 @@ const RECIPES = {
   },
 };
 
+/** Actually begin the processional. Only ever called on a running context. */
+function startThemeNow() {
+  const ctx = audio.ctx;
+  if (!ctx || ctx.state !== 'running' || audio.muted || themePlaying) return;
+  themePlaying = true;
+  themeStartedAt = ctx.currentTime + 0.12;
+  if (audio.themeBus) audio.themeBus.gain.setValueAtTime(1, ctx.currentTime);
+  themeTick();
+}
+
 export const sound = {
-  /** Start the looping title theme. Safe to call repeatedly. */
+  /**
+   * Ask for the looping title theme. Safe to call repeatedly, including before
+   * any gesture has happened: the request is remembered and honoured the
+   * instant the context reports `running`, so the very first tap starts the
+   * music even on Safari, where `resume()` resolves a beat later.
+   */
   startTheme() {
+    audio.themeWanted = true;
     if (audio.muted || themePlaying) return;
     const ctx = ensureContext();
-    if (!ctx) return;
-    // Wait for the hardware; a theme scheduled against a sleeping context is
-    // simply thrown away.
-    if (ctx.state !== 'running') return;
-    themePlaying = true;
-    themeStartedAt = ctx.currentTime + 0.12;
-    if (audio.themeBus) audio.themeBus.gain.setValueAtTime(1, ctx.currentTime);
-    themeTick();
+    if (!ctx) return; // no gesture yet — onContextRunning will pick this up
+    startThemeNow();
   },
 
   /** Silences the music immediately, including notes already scheduled. */
   stopTheme() {
+    audio.themeWanted = false;
     themePlaying = false;
     if (themeTimer) clearTimeout(themeTimer);
     themeTimer = null;
@@ -416,9 +474,30 @@ export const sound = {
     return themePlaying;
   },
 
-  /** Call from any user gesture. Safe and cheap to call repeatedly. */
+  /**
+   * Call from any user gesture. This is the ONLY thing that permits the audio
+   * context to be constructed, so it must be wired to real input events and
+   * never called speculatively at page load.
+   */
   unlock() {
+    noteGesture();
     return !!ensureContext();
+  },
+
+  /**
+   * Safari suspends audio when the tab is hidden, when a call arrives, or when
+   * the screen locks, and does not always resume it on return. Call this from
+   * `visibilitychange` / `focus` / `pageshow` to nudge it awake again.
+   */
+  resumeIfInterrupted() {
+    if (!audio.ctx || audio.muted) return;
+    if (audio.ctx.state === 'running') return;
+    try {
+      const r = audio.ctx.resume();
+      if (r && typeof r.then === 'function') r.then(onContextRunning, () => {});
+    } catch {
+      /* ignore */
+    }
   },
 
   /** True once the hardware is actually running. */

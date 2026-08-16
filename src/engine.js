@@ -169,6 +169,14 @@ export function createGame({ seed, config = {}, players = [] } = {}) {
 
     currentRoundBids: [],
     lockedSeats: [],
+    /**
+     * Seats that have left a humans-only game and are not being covered by a
+     * computer. A retired seat always bids nothing and its castle can no
+     * longer win, so the remaining players finish the game between them
+     * instead of losing to an absent opponent's castle. Empty in every other
+     * mode, which is why nothing else in the engine changes.
+     */
+    retiredSeats: [],
 
     completeQueenPath: [], // authoritative only — never in a PlayerView (§5.3)
     bonusLedger: [], // authoritative only — for the end reveal (§18)
@@ -246,6 +254,26 @@ export function startGame(state, { now = Date.now() } = {}) {
   s.timerDeadline = now + s.config.decisionTimerMs;
   s.lockedSeats = [];
   s.currentRoundBids = s.players.map(() => null);
+  return applyRetirements(s);
+}
+
+/**
+ * A retired seat is pre-locked on an empty bid every round, so the round can
+ * complete the moment the remaining players have locked. Called wherever a new
+ * round opens.
+ */
+export function applyRetirements(state) {
+  const retired = state.retiredSeats || [];
+  if (!retired.length) return state;
+  const s = {
+    ...state,
+    currentRoundBids: state.currentRoundBids.slice(),
+    lockedSeats: state.lockedSeats.slice(),
+  };
+  for (const seat of retired) {
+    s.currentRoundBids[seat] = emptyBid();
+    if (!s.lockedSeats.includes(seat)) s.lockedSeats.push(seat);
+  }
   return s;
 }
 
@@ -402,11 +430,35 @@ export function moveQueen(state, direction, distance) {
 
 /** §9, §22 step 8 — a castle is won only by *landing* on it. */
 export function checkWinner(state, finalPosition) {
+  const retired = state.retiredSeats || [];
   for (let seat = 0; seat < state.castles.length; seat++) {
+    // A player who has left cannot be handed the crown in their absence.
+    if (retired.includes(seat)) continue;
     if (sameCell(state.castles[seat], finalPosition)) return seat;
   }
   return null;
 }
+
+/**
+ * Remove a seat from play without disturbing the board. Used when a human
+ * leaves a humans-only game: nobody takes their place, they simply stop
+ * bidding and stop being able to win. The seat still holds a castle so the
+ * geometry of the board is unchanged mid-game, and the end-of-game reveal
+ * still shows where everyone was.
+ */
+export function retireSeat(state, seat) {
+  if (!state.players[seat]) return state;
+  const s = clone(state);
+  s.retiredSeats = s.retiredSeats || [];
+  if (!s.retiredSeats.includes(seat)) s.retiredSeats.push(seat);
+  s.currentRoundBids[seat] = emptyBid();
+  if (!s.lockedSeats.includes(seat)) s.lockedSeats.push(seat);
+  return s;
+}
+
+/** Seats still able to act this round. */
+export const activeSeats = (state) =>
+  state.players.filter((p) => !(state.retiredSeats || []).includes(p.seat)).map((p) => p.seat);
 
 /** §10.2 — reduce every remaining active bonus by the actual distance moved. */
 export function decayBonuses(state, actualDistanceMoved) {
@@ -638,6 +690,9 @@ export function resolveRound(state, { now = Date.now() } = {}) {
     s.lockedSeats = [];
     s.currentRoundBids = s.players.map(() => null);
     s.timerDeadline = now + s.config.decisionTimerMs;
+    // Seats that have left never bid again, so lock them straight away rather
+    // than making everyone else wait out the timer for a player who is gone.
+    Object.assign(s, applyRetirements(s));
   }
 
   return { state: s, resolution };

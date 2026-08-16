@@ -25,6 +25,7 @@ import {
   allSeatsLocked,
   resolveRound,
   setControlMode,
+  retireSeat,
   emptyBid,
 } from './engine.js';
 import { createPlayerView, createRevealView } from './playerView.js';
@@ -228,6 +229,7 @@ export function createHost({
           controlMode: p.controlMode,
           connectionStatus: p.connectionStatus,
           locked: state.lockedSeats.includes(p.seat),
+          retired: (state.retiredSeats || []).includes(p.seat),
         })),
       };
     },
@@ -303,6 +305,49 @@ export function createHost({
       state = setControlMode(state, seat, mode, opts);
       emit('state');
       if (mode === CONTROL_MODE.AI) scheduleAi();
+      return host;
+    },
+
+    /**
+     * Humans-only games have no computer players, so a seat that empties is
+     * not covered — it is retired. The player stops bidding and can no longer
+     * win, and the round resolves as soon as everyone still present has
+     * locked. §13's takeover rule deliberately does not apply here, because
+     * the whole point of the mode is that a bot never plays for a person.
+     */
+    retire(seat) {
+      state = retireSeat(state, seat);
+      emit('state');
+      afterLock();
+      return host;
+    },
+
+    /** Seats still playing. */
+    getActiveSeats() {
+      const retired = state.retiredSeats || [];
+      return state.players.filter((p) => !retired.includes(p.seat)).map((p) => p.seat);
+    },
+
+    /** Connected humans still in the game — the humans-only quorum check. */
+    getLiveHumanCount() {
+      const retired = state.retiredSeats || [];
+      return state.players.filter(
+        (p) =>
+          !retired.includes(p.seat) &&
+          p.controlMode === CONTROL_MODE.HUMAN &&
+          p.connectionStatus === CONNECTION.CONNECTED
+      ).length;
+    },
+
+    /**
+     * End a game that can no longer be played — a humans-only table that has
+     * dropped below two people. Distinct from a win: there is no winner.
+     */
+    abandon(reason = 'Not enough players remain.') {
+      stopTicker();
+      clearAiTimers();
+      state = { ...state, status: STATUS.FINISHED, phase: PHASES.FINISHED, timerDeadline: null, winner: null };
+      emit('abandoned', { reason });
       return host;
     },
 
