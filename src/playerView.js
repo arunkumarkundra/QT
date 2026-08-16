@@ -107,6 +107,8 @@ export function createPlayerView(state, seat) {
         controlMode: p.controlMode,
         takeoverReason: p.takeoverReason,
         locked: state.lockedSeats.includes(p.seat),
+        /** Left a humans-only game; nobody is covering the seat. */
+        retired: (state.retiredSeats || []).includes(p.seat),
       })),
 
     lastResolution: publicResolution(state.lastResolution, seat),
