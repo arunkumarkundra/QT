@@ -442,9 +442,18 @@ await test('Every SVG gradient id on the board is unique', () => {
 
 await test('Every fill reference resolves to a gradient that exists', () => {
   const defined = new Set([...doc.querySelectorAll('#screen-result [id]')].map((n) => n.id));
-  const refs = [...doc.querySelectorAll('#screen-result [fill^="url("]')].map((n) =>
-    n.getAttribute('fill').slice(5, -1)
-  );
+  /**
+   * NOTE: `[fill^="url("]` silently matches nothing under jsdom — nwsapi
+   * mis-parses the unescaped parenthesis inside the attribute value and
+   * returns an empty list rather than raising. That made this test pass
+   * vacuously for a while and then fail on the `refs.length > 0` guard
+   * without any gradient actually being broken. Select on the attribute's
+   * presence and filter in JavaScript instead.
+   */
+  const refs = [...doc.querySelectorAll('#screen-result [fill]')]
+    .map((n) => n.getAttribute('fill'))
+    .filter((v) => v.startsWith('url('))
+    .map((v) => v.slice(5, -1));
   assert(refs.length > 0, 'Expected gradient references');
   for (const r of refs) assert(defined.has(r), `Fill references missing gradient "${r}"`);
 });
