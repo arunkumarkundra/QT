@@ -372,8 +372,6 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--gold-l
   padding: 13px;
   border-radius: var(--r-lg);
   background:
-
-  background:
     linear-gradient(158deg, #39445c 0%, #232c3e 38%, #161c29 68%, #2d3749 100%);
   box-shadow:
     var(--shadow),
@@ -620,7 +618,18 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--gold-l
 
 .path-layer { position: absolute; inset: 0; pointer-events: none; z-index: 3; }
 
-.wall-flash { position: absolute; opacity: 0; z-index: 6; }
+/**
+ * The boundary flash is a decorative strip laid along whichever wall the queen
+ * hit. It is `position:absolute` with inline geometry, so it keeps covering
+ * ~10% of the board along that wall long after the animation has faded to
+ * opacity 0 — and at z-index 6 it sits ABOVE .board-cells.
+ *
+ * Without `pointer-events: none` it therefore eats every click aimed at the
+ * cells beside the queen once she is standing against that wall, which is
+ * exactly the "cannot stake in the legal directions next to a wall" bug.
+ * An invisible decoration must never be able to take a pointer event.
+ */
+.wall-flash { position: absolute; opacity: 0; z-index: 6; pointer-events: none; }
 .wall-flash.fire { animation: wall-hit .6s ease-out; }
 @keyframes wall-hit { 0% { opacity: .95; } 100% { opacity: 0; } }
 
@@ -962,6 +971,11 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--gold-l
   color: var(--gold-lt) !important;
   text-align: center;
 }
+
+/* A seat whose player left a humans-only game. Nobody is covering it, so it
+   must read as neither an active player nor a bot. */
+.seat-chip.retired { opacity: .32; filter: grayscale(1); }
+.seat-chip.retired .lock-badge { display: none; }
 
 </style>
 </head>
@@ -1529,6 +1543,14 @@ function createGame({ seed, config = {}, players = [] } = {}) {
 
     currentRoundBids: [],
     lockedSeats: [],
+    /**
+     * Seats that have left a humans-only game and are not being covered by a
+     * computer. A retired seat always bids nothing and its castle can no
+     * longer win, so the remaining players finish the game between them
+     * instead of losing to an absent opponent's castle. Empty in every other
+     * mode, which is why nothing else in the engine changes.
+     */
+    retiredSeats: [],
 
     completeQueenPath: [], // authoritative only — never in a PlayerView (§5.3)
     bonusLedger: [], // authoritative only — for the end reveal (§18)
@@ -1606,6 +1628,26 @@ function startGame(state, { now = Date.now() } = {}) {
   s.timerDeadline = now + s.config.decisionTimerMs;
   s.lockedSeats = [];
   s.currentRoundBids = s.players.map(() => null);
+  return applyRetirements(s);
+}
+
+/**
+ * A retired seat is pre-locked on an empty bid every round, so the round can
+ * complete the moment the remaining players have locked. Called wherever a new
+ * round opens.
+ */
+function applyRetirements(state) {
+  const retired = state.retiredSeats || [];
+  if (!retired.length) return state;
+  const s = {
+    ...state,
+    currentRoundBids: state.currentRoundBids.slice(),
+    lockedSeats: state.lockedSeats.slice(),
+  };
+  for (const seat of retired) {
+    s.currentRoundBids[seat] = emptyBid();
+    if (!s.lockedSeats.includes(seat)) s.lockedSeats.push(seat);
+  }
   return s;
 }
 
@@ -1762,11 +1804,35 @@ function moveQueen(state, direction, distance) {
 
 /** §9, §22 step 8 — a castle is won only by *landing* on it. */
 function checkWinner(state, finalPosition) {
+  const retired = state.retiredSeats || [];
   for (let seat = 0; seat < state.castles.length; seat++) {
+    // A player who has left cannot be handed the crown in their absence.
+    if (retired.includes(seat)) continue;
     if (sameCell(state.castles[seat], finalPosition)) return seat;
   }
   return null;
 }
+
+/**
+ * Remove a seat from play without disturbing the board. Used when a human
+ * leaves a humans-only game: nobody takes their place, they simply stop
+ * bidding and stop being able to win. The seat still holds a castle so the
+ * geometry of the board is unchanged mid-game, and the end-of-game reveal
+ * still shows where everyone was.
+ */
+function retireSeat(state, seat) {
+  if (!state.players[seat]) return state;
+  const s = clone(state);
+  s.retiredSeats = s.retiredSeats || [];
+  if (!s.retiredSeats.includes(seat)) s.retiredSeats.push(seat);
+  s.currentRoundBids[seat] = emptyBid();
+  if (!s.lockedSeats.includes(seat)) s.lockedSeats.push(seat);
+  return s;
+}
+
+/** Seats still able to act this round. */
+const activeSeats = (state) =>
+  state.players.filter((p) => !(state.retiredSeats || []).includes(p.seat)).map((p) => p.seat);
 
 /** §10.2 — reduce every remaining active bonus by the actual distance moved. */
 function decayBonuses(state, actualDistanceMoved) {
@@ -1998,6 +2064,9 @@ function resolveRound(state, { now = Date.now() } = {}) {
     s.lockedSeats = [];
     s.currentRoundBids = s.players.map(() => null);
     s.timerDeadline = now + s.config.decisionTimerMs;
+    // Seats that have left never bid again, so lock them straight away rather
+    // than making everyone else wait out the timer for a player who is gone.
+    Object.assign(s, applyRetirements(s));
   }
 
   return { state: s, resolution };
@@ -2125,6 +2194,8 @@ function createPlayerView(state, seat) {
         controlMode: p.controlMode,
         takeoverReason: p.takeoverReason,
         locked: state.lockedSeats.includes(p.seat),
+        /** Left a humans-only game; nobody is covering the seat. */
+        retired: (state.retiredSeats || []).includes(p.seat),
       })),
 
     lastResolution: publicResolution(state.lastResolution, seat),
@@ -2503,17 +2574,60 @@ const audio = {
   kicked: false,
   themeBus: null,
   pending: [],
+  /**
+   * Safari will not let an AudioContext created OUTSIDE a user gesture reach
+   * the `running` state, and once it has handed back a permanently-suspended
+   * context there is no way to rescue it. So construction is gated: nothing is
+   * created until `noteGesture()` has been called from a real input event.
+   */
+  gestureSeen: false,
+  /** The title theme wants to be playing; start it the moment we are able. */
+  themeWanted: false,
 };
 
 /**
- * Browsers refuse to start audio until a real user gesture, and Safari in
- * particular will hand back a context stuck in "suspended" or "interrupted"
- * that silently swallows everything scheduled on it. So: create on demand,
- * resume on EVERY call, and kick the hardware awake with a silent buffer the
- * first time. Cheap, and it removes an entire class of "no sound" bug.
+ * Called from real input handlers only. This is what unlocks construction.
+ * Safe and cheap to call on every gesture, which is exactly how it is wired.
  */
+function noteGesture() {
+  audio.gestureSeen = true;
+}
+
+/** Fire everything that was queued while the hardware was asleep. */
+function flushPending() {
+  if (!audio.ctx || audio.ctx.state !== 'running' || !audio.pending.length) return;
+  const queued = audio.pending.splice(0, audio.pending.length);
+  for (const [name, args] of queued) {
+    try {
+      RECIPES[name]?.(...args);
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+/**
+ * The context woke up. Anything that was waiting on it goes now.
+ *
+ * This callback is the whole fix for Safari. `resume()` is asynchronous, and
+ * Safari returns a context in `suspended` (or, after a phone call or a tab
+ * switch, `interrupted`) even when it is created inside a gesture. Code that
+ * checks `ctx.state === 'running'` immediately after calling `resume()` always
+ * loses that race, which is why the first click produced no sound and the
+ * theme never began. Reacting to `statechange` instead of guessing removes the
+ * race entirely.
+ */
+function onContextRunning() {
+  if (!audio.ctx || audio.ctx.state !== 'running') return;
+  flushPending();
+  if (audio.themeWanted && !audio.muted && !themePlaying) startThemeNow();
+}
+
 function ensureContext() {
   if (!audio.ctx) {
+    // No gesture yet: refuse to construct. A context built at page load is a
+    // context Safari will never let us use.
+    if (!audio.gestureSeen) return null;
     const Ctx = typeof window !== 'undefined' && (window.AudioContext || window.webkitAudioContext);
     if (!Ctx) return null;
     try {
@@ -2530,31 +2644,35 @@ function ensureContext() {
     audio.themeBus.gain.value = 1;
     audio.themeBus.connect(audio.master);
     audio.ready = true;
+
+    try {
+      audio.ctx.onstatechange = onContextRunning;
+      audio.ctx.addEventListener?.('statechange', onContextRunning);
+    } catch {
+      /* older engines: the resume().then path below still covers us */
+    }
   }
 
+  // 'suspended' is the autoplay lock; 'interrupted' is Safari after a call,
+  // an alarm, or a background tab. Both are cured by resume().
   if (audio.ctx.state !== 'running') {
     try {
       const resumed = audio.ctx.resume();
-      if (resumed && typeof resumed.catch === 'function') resumed.catch(() => {});
+      if (resumed && typeof resumed.then === 'function') {
+        resumed.then(onContextRunning, () => {});
+      }
     } catch {
       /* nothing more we can do */
     }
   }
 
-  // Anything scheduled while the context was asleep is lost, so hold sounds
-  // back until the hardware is genuinely running and replay them on wake.
-  if (audio.ctx.state === 'running' && audio.pending.length) {
-    const queued = audio.pending.splice(0, audio.pending.length);
-    for (const [name, args] of queued) {
-      try {
-        RECIPES[name]?.(...args);
-      } catch {
-        /* ignore */
-      }
-    }
-  }
+  flushPending();
 
-  if (!audio.kicked) {
+  if (!audio.kicked && audio.ctx.state === 'running') {
+    // A one-sample buffer played from inside the gesture is what actually
+    // convinces iOS the page is allowed to make noise. Doing it while the
+    // context is still suspended wastes the only chance we get, so it waits
+    // until the hardware is genuinely running.
     audio.kicked = true;
     try {
       const buf = audio.ctx.createBuffer(1, 1, audio.ctx.sampleRate);
@@ -2859,23 +2977,34 @@ const RECIPES = {
   },
 };
 
+/** Actually begin the processional. Only ever called on a running context. */
+function startThemeNow() {
+  const ctx = audio.ctx;
+  if (!ctx || ctx.state !== 'running' || audio.muted || themePlaying) return;
+  themePlaying = true;
+  themeStartedAt = ctx.currentTime + 0.12;
+  if (audio.themeBus) audio.themeBus.gain.setValueAtTime(1, ctx.currentTime);
+  themeTick();
+}
+
 const sound = {
-  /** Start the looping title theme. Safe to call repeatedly. */
+  /**
+   * Ask for the looping title theme. Safe to call repeatedly, including before
+   * any gesture has happened: the request is remembered and honoured the
+   * instant the context reports `running`, so the very first tap starts the
+   * music even on Safari, where `resume()` resolves a beat later.
+   */
   startTheme() {
+    audio.themeWanted = true;
     if (audio.muted || themePlaying) return;
     const ctx = ensureContext();
-    if (!ctx) return;
-    // Wait for the hardware; a theme scheduled against a sleeping context is
-    // simply thrown away.
-    if (ctx.state !== 'running') return;
-    themePlaying = true;
-    themeStartedAt = ctx.currentTime + 0.12;
-    if (audio.themeBus) audio.themeBus.gain.setValueAtTime(1, ctx.currentTime);
-    themeTick();
+    if (!ctx) return; // no gesture yet — onContextRunning will pick this up
+    startThemeNow();
   },
 
   /** Silences the music immediately, including notes already scheduled. */
   stopTheme() {
+    audio.themeWanted = false;
     themePlaying = false;
     if (themeTimer) clearTimeout(themeTimer);
     themeTimer = null;
@@ -2902,9 +3031,30 @@ const sound = {
     return themePlaying;
   },
 
-  /** Call from any user gesture. Safe and cheap to call repeatedly. */
+  /**
+   * Call from any user gesture. This is the ONLY thing that permits the audio
+   * context to be constructed, so it must be wired to real input events and
+   * never called speculatively at page load.
+   */
   unlock() {
+    noteGesture();
     return !!ensureContext();
+  },
+
+  /**
+   * Safari suspends audio when the tab is hidden, when a call arrives, or when
+   * the screen locks, and does not always resume it on return. Call this from
+   * `visibilitychange` / `focus` / `pageshow` to nudge it awake again.
+   */
+  resumeIfInterrupted() {
+    if (!audio.ctx || audio.muted) return;
+    if (audio.ctx.state === 'running') return;
+    try {
+      const r = audio.ctx.resume();
+      if (r && typeof r.then === 'function') r.then(onContextRunning, () => {});
+    } catch {
+      /* ignore */
+    }
   },
 
   /** True once the hardware is actually running. */
@@ -3178,6 +3328,7 @@ function createHost({
           controlMode: p.controlMode,
           connectionStatus: p.connectionStatus,
           locked: state.lockedSeats.includes(p.seat),
+          retired: (state.retiredSeats || []).includes(p.seat),
         })),
       };
     },
@@ -3256,6 +3407,49 @@ function createHost({
       return host;
     },
 
+    /**
+     * Humans-only games have no computer players, so a seat that empties is
+     * not covered — it is retired. The player stops bidding and can no longer
+     * win, and the round resolves as soon as everyone still present has
+     * locked. §13's takeover rule deliberately does not apply here, because
+     * the whole point of the mode is that a bot never plays for a person.
+     */
+    retire(seat) {
+      state = retireSeat(state, seat);
+      emit('state');
+      afterLock();
+      return host;
+    },
+
+    /** Seats still playing. */
+    getActiveSeats() {
+      const retired = state.retiredSeats || [];
+      return state.players.filter((p) => !retired.includes(p.seat)).map((p) => p.seat);
+    },
+
+    /** Connected humans still in the game — the humans-only quorum check. */
+    getLiveHumanCount() {
+      const retired = state.retiredSeats || [];
+      return state.players.filter(
+        (p) =>
+          !retired.includes(p.seat) &&
+          p.controlMode === CONTROL_MODE.HUMAN &&
+          p.connectionStatus === CONNECTION.CONNECTED
+      ).length;
+    },
+
+    /**
+     * End a game that can no longer be played — a humans-only table that has
+     * dropped below two people. Distinct from a win: there is no winner.
+     */
+    abandon(reason = 'Not enough players remain.') {
+      stopTicker();
+      clearAiTimers();
+      state = { ...state, status: STATUS.FINISHED, phase: PHASES.FINISHED, timerDeadline: null, winner: null };
+      emit('abandoned', { reason });
+      return host;
+    },
+
     /** Simulate a dropped connection for testing §13 and §21. */
     simulateDisconnect(seat) {
       return host.setControl(seat, CONTROL_MODE.AI, {
@@ -3324,6 +3518,31 @@ function createHost({
  *
  * Peers submit INTENT ("stake one coin left"). There is no message that moves
  * the queen, so a hostile peer cannot fabricate an outcome.
+ *
+ * ── Why the previous build was unstable ───────────────────────────────────
+ *
+ * It pushed a full state blob to every peer on EVERY host event, and the host
+ * emits `tick` ten times a second. Each joiner was therefore sent a complete
+ * serialized PlayerView 10×/s for the whole game — plus a lobby broadcast
+ * every two seconds, plus (once finished) the entire reveal, which carries the
+ * complete queen path and round log and grows all game.
+ *
+ * A WebRTC data channel saturated like that backs up, and once it backs up the
+ * intent messages travelling the other way queue behind it. That is one cause
+ * producing both reported symptoms: a link that "breaks in between", and coin
+ * staking that misbehaves on a guest's screen.
+ *
+ * Five changes address it:
+ *
+ *   1. Pushes are event-filtered and coalesced. `tick` never crosses the wire;
+ *      guests run their own countdown against the host's absolute deadline.
+ *   2. Payloads are trimmed — the reveal is sent once, at the end.
+ *   3. Intents are sequenced and re-sent until acknowledged, so a dropped
+ *      message no longer means a lost coin.
+ *   4. Guests echo their own staking optimistically and reconcile against the
+ *      host's authoritative answer, so the board responds to a tap instantly.
+ *   5. Players are identified by a durable clientId rather than by peerId, so
+ *      a browser that reconnects gets its own seat back.
  */
 
 /**
@@ -3341,6 +3560,26 @@ const TRYSTERO_URLS = [
 ];
 
 const APP_ID = 'queens-tug-v1';
+
+/** Wire tuning. Presentation-neutral: none of these can change an outcome. */
+const NET_TUNING = {
+  /** Never send two state pushes closer together than this. */
+  pushCoalesceMs: 90,
+  /** Even with nothing happening, refresh each peer at this rate. */
+  keepAliveMs: 1500,
+  /** Re-send an unacknowledged intent this often until the host confirms it. */
+  intentRetryMs: 350,
+  /** Give up on an intent after this long and tell the player. */
+  intentTimeoutMs: 6000,
+  /** Host → peer liveness probe. */
+  pingMs: 2000,
+  /** No traffic from a peer for this long: treat them as gone. */
+  peerTimeoutMs: 9000,
+  /** Guest: no traffic from the host for this long: show "reconnecting". */
+  hostSilenceMs: 6000,
+  /** Lobby re-broadcast while waiting in the start screen. */
+  lobbyBroadcastMs: 2000,
+};
 
 /** Loaded lazily so solo play never pays for the network code. */
 let trysteroPromise = null;
@@ -3378,6 +3617,31 @@ const NET_STATE = {
   ERROR: 'ERROR',
 };
 
+const CLIENT_ID_KEY = 'qt-client-id';
+let fallbackClientId = null;
+
+/**
+ * A durable identity for this browser, independent of the WebRTC peerId, which
+ * is regenerated on every reconnection. This is what lets a player who drops
+ * out and comes back get their own seat, castle and coins returned rather than
+ * being handed a new seat or none at all.
+ */
+function clientId() {
+  try {
+    let id = localStorage.getItem(CLIENT_ID_KEY);
+    if (!id) {
+      id = `c-${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`;
+      localStorage.setItem(CLIENT_ID_KEY, id);
+    }
+    return id;
+  } catch {
+    // Private mode: fall back to a per-tab identity. Reconnection within the
+    // same tab still works; a fresh tab is treated as a new player.
+    if (!fallbackClientId) fallbackClientId = `c-${Math.random().toString(36).slice(2, 12)}`;
+    return fallbackClientId;
+  }
+}
+
 /**
  * Open a room. Both creator and joiner call this; `isHost` decides which side
  * of the protocol they speak.
@@ -3386,27 +3650,40 @@ async function openRoom({ code, isHost, onEvent }) {
   const { joinRoom } = await loadTrystero();
   const room = joinRoom({ appId: APP_ID }, code);
 
-  // Trystero actions are capped at 12 bytes.
+  // Trystero action names are capped at 12 bytes.
   const [sendState, onState] = room.makeAction('state');
   const [sendIntent, onIntent] = room.makeAction('intent');
   const [sendLobby, onLobby] = room.makeAction('lobby');
   // An explicit greeting removes any dependence on peer-join event ordering,
   // which is the classic way a lobby ends up silently waiting forever.
   const [sendHello, onHello] = room.makeAction('hello');
+  // Acknowledgement of a received intent, carrying the sequence number the
+  // host has applied. Without this a dropped bid is simply lost.
+  const [sendAck, onAck] = room.makeAction('ack');
+  // Liveness + clock offset. Cheap, and it keeps the data channel warm, which
+  // some NATs need in order not to reap an idle mapping.
+  const [sendPing, onPing] = room.makeAction('ping');
+  const [sendPong, onPong] = room.makeAction('pong');
 
   const api = {
     room,
     isHost,
     code,
-    peers: new Map(), // peerId -> seat
+    id: clientId(),
     sendState,
     sendIntent,
     sendLobby,
     sendHello,
+    sendAck,
+    sendPing,
+    sendPong,
     onState,
     onIntent,
     onLobby,
     onHello,
+    onAck,
+    onPing,
+    onPong,
     getPeers: () => Object.keys(room.getPeers?.() || {}),
     leave() {
       try {
@@ -3417,23 +3694,40 @@ async function openRoom({ code, isHost, onEvent }) {
     },
   };
 
-  room.onPeerJoin((peerId) => onEvent({ type: 'peer-join', peerId }));
-  room.onPeerLeave((peerId) => onEvent({ type: 'peer-leave', peerId }));
+  room.onPeerJoin((peerId) => onEvent?.({ type: 'peer-join', peerId }));
+  room.onPeerLeave((peerId) => onEvent?.({ type: 'peer-leave', peerId }));
 
-  // Announce ourselves repeatedly for a short while. Whichever side comes up
-  // second still gets seen.
+  // Answer every ping so the other side can measure liveness and clock skew.
+  onPing((msg, peerId) => {
+    try {
+      sendPong({ t: msg?.t, now: Date.now() }, peerId);
+    } catch {
+      /* peer vanished mid-flight */
+    }
+  });
+
+  /**
+   * Announce ourselves repeatedly for a short while. Whichever side comes up
+   * second still gets seen. The greeting carries our durable clientId so the
+   * host can restore a seat we already held.
+   */
   if (!isHost) {
     let tries = 0;
     const knock = () => {
-      if (tries++ > 20) return;
+      if (tries++ > 40) return;
       try {
-        sendHello({ t: 'hello' });
+        sendHello({ t: 'hello', id: api.id });
       } catch {
         /* not connected yet */
       }
-      setTimeout(knock, 1000);
+      api._knockTimer = setTimeout(knock, tries < 10 ? 700 : 2000);
     };
     knock();
+    const stopLeaving = api.leave;
+    api.leave = () => {
+      clearTimeout(api._knockTimer);
+      stopLeaving();
+    };
   }
 
   return api;
@@ -3446,128 +3740,379 @@ async function openRoom({ code, isHost, onEvent }) {
 /**
  * Wrap a local authoritative host so that remote seats are fed filtered views
  * and their intents are validated exactly like local ones.
+ *
+ * `humansOnly` changes what happens when somebody leaves: instead of a
+ * computer covering the seat, the seat is retired and the table plays on,
+ * provided at least two people remain.
  */
-function attachHostToRoom({ net, host, onLobbyChange }) {
-  /** seat -> peerId for remote humans. Seat 0 is always the creator. */
-  const seatOwners = new Map();
+function attachHostToRoom({ net, host, onLobbyChange, onEvent, humansOnly = false }) {
+  /**
+   * The seating book. Keyed by durable clientId, not by peerId, so a browser
+   * that reconnects is recognised as the same player.
+   *
+   *   clientId -> { seat, peerId, lastSeen, present }
+   */
+  const roster = new Map();
+  /** Highest intent sequence applied per seat; anything older is a duplicate. */
+  const appliedSeq = new Map();
+  let currentHost = host;
+  let unsubscribe = null;
+  let started = false;
+  let disposed = false;
+  let onlyHumans = humansOnly;
 
-  function seatOfPeer(peerId) {
-    for (const [seat, id] of seatOwners) if (id === peerId) return seat;
+  let pushTimer = null;
+  let lastPushAt = 0;
+
+  const entryOfPeer = (peerId) => {
+    for (const entry of roster.values()) if (entry.peerId === peerId) return entry;
     return null;
+  };
+  const seatOfPeer = (peerId) => entryOfPeer(peerId)?.seat ?? null;
+
+  function seatCount() {
+    return currentHost.getPublicSummary().seats.length;
   }
 
   function nextFreeSeat() {
-    for (let seat = 1; seat < 4; seat++) if (!seatOwners.has(seat)) return seat;
+    const total = seatCount();
+    const taken = new Set([0, ...[...roster.values()].map((e) => e.seat)]);
+    for (let seat = 1; seat < total; seat++) if (!taken.has(seat)) return seat;
     return null;
   }
 
+  /** Humans present right now: the creator plus every connected joiner. */
+  function humanRoster() {
+    return [
+      { seat: 0, clientId: net.id, peerId: null, isHost: true },
+      ...[...roster.entries()]
+        .filter(([, e]) => e.present)
+        .sort((a, b) => a[1].seat - b[1].seat)
+        .map(([id, e]) => ({ seat: e.seat, clientId: id, peerId: e.peerId, isHost: false })),
+    ];
+  }
+
   function lobbySnapshot() {
+    const total = seatCount();
+    const filled = new Set([0, ...[...roster.values()].filter((e) => e.present).map((e) => e.seat)]);
     return {
       code: net.code,
-      seats: [0, 1, 2, 3].map((seat) => ({
+      humansOnly: onlyHumans,
+      started,
+      seats: Array.from({ length: total }, (_, seat) => ({
         seat,
-        kind: seat === 0 || seatOwners.has(seat) ? 'human' : 'bot',
+        kind: filled.has(seat) ? 'human' : 'bot',
       })),
     };
   }
 
   function broadcastLobby() {
-    net.sendLobby(lobbySnapshot());
+    if (disposed) return;
+    try {
+      net.sendLobby(lobbySnapshot());
+    } catch {
+      /* nobody connected yet */
+    }
     onLobbyChange?.(lobbySnapshot());
   }
 
   /**
    * Push each remote seat its own private view. Never broadcast a view.
-   * Nothing is sent until the host actually starts, so a joiner stays on the
-   * lobby screen instead of being dropped onto a board that is not live.
+   *
+   * Coalesced: many host events arrive in a burst (stage, lock, resolve) and
+   * only the final state matters. Sending each one separately is what floods
+   * the channel.
    */
-  function pushViews() {
-    const summary = host.getPublicSummary();
-    if (summary.status !== 'PLAYING' && summary.status !== 'FINISHED') return;
-    const presenting = host.isPresenting();
-    const lastResolution = host.getLastResolution();
-    let reveal = null;
-    try {
-      reveal = host.getReveal();
-    } catch {
-      reveal = null; // still running — the boundary refuses, as it should
+  function pushViews({ force = false } = {}) {
+    if (disposed) return;
+    const wait = Math.max(0, NET_TUNING.pushCoalesceMs - (Date.now() - lastPushAt));
+    if (!force && wait > 0) {
+      if (!pushTimer) {
+        pushTimer = setTimeout(() => {
+          pushTimer = null;
+          pushViews({ force: true });
+        }, wait);
+      }
+      return;
     }
-    for (const [seat, peerId] of seatOwners) {
-      net.sendState(
-        {
-          view: host.getView(seat),
-          summary,
-          presenting,
-          lastResolution,
-          reveal,
-        },
-        peerId
-      );
+    if (pushTimer) {
+      clearTimeout(pushTimer);
+      pushTimer = null;
+    }
+    lastPushAt = Date.now();
+
+    const summary = currentHost.getPublicSummary();
+    if (summary.status !== 'PLAYING' && summary.status !== 'FINISHED') return;
+    const presenting = currentHost.isPresenting();
+    const lastResolution = currentHost.getLastResolution();
+
+    /**
+     * The reveal is large — every castle, the complete queen path and the full
+     * round log — and it is only meaningful once. Sending it on every push was
+     * a growing redundant payload for the whole of a finished game.
+     */
+    let reveal = null;
+    if (summary.status === 'FINISHED') {
+      try {
+        reveal = currentHost.getReveal();
+      } catch {
+        reveal = null; // still running — the boundary refuses, as it should
+      }
+    }
+
+    for (const entry of roster.values()) {
+      if (!entry.peerId) continue;
+      try {
+        net.sendState(
+          {
+            view: currentHost.getView(entry.seat),
+            summary,
+            presenting,
+            lastResolution,
+            reveal,
+            /** Host wall-clock, so the guest can correct for clock skew. */
+            hostNow: Date.now(),
+            ackSeq: appliedSeq.get(entry.seat) ?? 0,
+          },
+          entry.peerId
+        );
+      } catch {
+        /* the peer went away between the check and the send */
+      }
     }
   }
 
-  // A joiner's greeting is the authoritative signal to seat them.
-  net.onHello((_msg, peerId) => {
-    api.admit(peerId);
+  /* ---------------- inbound ---------------- */
+
+  net.onHello((msg, peerId) => {
+    const id = typeof msg?.id === 'string' ? msg.id : null;
+    api.admit(peerId, id);
   });
 
-  // Re-announce the lobby periodically so a peer that connected during a
-  // hiccup still learns the seating.
-  const heartbeat = setInterval(() => {
-    try {
-      broadcastLobby();
-    } catch {
-      /* ignore */
-    }
-  }, 2000);
-
   net.onIntent((msg, peerId) => {
-    const seat = seatOfPeer(peerId);
-    if (seat === null) return; // not seated; ignore
-    if (msg?.t === 'bid') host.stageBid(seat, msg.bid);
-    else if (msg?.t === 'lock') host.lock(seat);
+    const entry = entryOfPeer(peerId);
+    if (!entry) return; // not seated; ignore
+    entry.lastSeen = Date.now();
+    const seat = entry.seat;
+
+    const seq = Number(msg?.seq) || 0;
+    const applied = appliedSeq.get(seat) ?? 0;
+
+    /**
+     * Re-sent messages are expected — that is how a dropped intent recovers.
+     * Applying one twice must therefore be harmless, which is why a bid is
+     * sent as an absolute placement ("UP:2, LEFT:1") rather than as a delta
+     * ("+1 coin left"). Deltas plus retries would double-charge a player.
+     */
+    if (seq && seq <= applied) {
+      try {
+        net.sendAck({ seq: applied }, peerId);
+      } catch {
+        /* gone */
+      }
+      return;
+    }
+
+    if (msg?.t === 'bid') currentHost.stageBid(seat, msg.bid);
+    else if (msg?.t === 'lock') currentHost.lock(seat);
+    else if (msg?.t === 'bye') {
+      api.release(peerId, { voluntary: true });
+      return;
+    }
+
+    if (seq) appliedSeq.set(seat, seq);
+    try {
+      net.sendAck({ seq: appliedSeq.get(seat) ?? 0 }, peerId);
+    } catch {
+      /* gone */
+    }
     pushViews();
   });
 
-  const unsubscribe = host.subscribe(() => pushViews());
+  net.onPong((_msg, peerId) => {
+    const entry = entryOfPeer(peerId);
+    if (entry) entry.lastSeen = Date.now();
+  });
+
+  /* ---------------- timers ---------------- */
+
+  /** Lobby re-broadcast, but only while we are still in the lobby. */
+  const lobbyBeat = setInterval(() => {
+    if (!started) broadcastLobby();
+  }, NET_TUNING.lobbyBroadcastMs);
+
+  /**
+   * Liveness. `onPeerLeave` is not reliable on flaky mobile networks — a phone
+   * that loses signal often produces no event at all — so silence is treated
+   * as absence after a grace period, and a keep-alive push stops an idle NAT
+   * mapping from being reaped underneath a thinking player.
+   */
+  const healthBeat = setInterval(() => {
+    if (disposed) return;
+    const now = Date.now();
+    for (const entry of roster.values()) {
+      if (!entry.peerId || !entry.present) continue;
+      try {
+        net.sendPing({ t: now }, entry.peerId);
+      } catch {
+        /* gone */
+      }
+      if (now - entry.lastSeen > NET_TUNING.peerTimeoutMs) api.release(entry.peerId);
+    }
+    if (started) pushViews({ force: true });
+  }, Math.min(NET_TUNING.pingMs, NET_TUNING.keepAliveMs));
 
   const api = {
     lobbySnapshot,
+    humanRoster,
     pushViews,
     broadcastLobby,
+    seatOfPeer,
+    setHumansOnly(value) {
+      onlyHumans = !!value;
+      broadcastLobby();
+    },
 
-    /** A browser appeared. Give it a seat if one is free. */
-    admit(peerId) {
-      if (seatOfPeer(peerId) !== null) return seatOfPeer(peerId);
+    /** Point the bridge at a freshly-built host, e.g. after seat compaction. */
+    rebind(nextHost) {
+      unsubscribe?.();
+      currentHost = nextHost;
+      appliedSeq.clear();
+      unsubscribe = currentHost.subscribe(onHostEvent);
+      return api;
+    },
+
+    /**
+     * Re-seat everyone into contiguous seats 0..n-1. Called just before a
+     * humans-only game starts, because the engine's playerCount has to match
+     * the number of people at the table and seats must have no holes: if the
+     * player who took seat 2 leaves the lobby, seat 1 is empty and a
+     * three-player game would be built around a gap.
+     *
+     * Returns the clientIds in seat order.
+     */
+    compactSeats() {
+      const present = [...roster.entries()]
+        .filter(([, e]) => e.present)
+        .sort((a, b) => a[1].seat - b[1].seat);
+      present.forEach(([, e], i) => {
+        e.seat = i + 1; // seat 0 is always the creator
+      });
+      appliedSeq.clear();
+      return [net.id, ...present.map(([id]) => id)];
+    },
+
+    markStarted() {
+      started = true;
+      broadcastLobby();
+      pushViews({ force: true });
+    },
+
+    /**
+     * A browser appeared. Give it the seat it already held if we know it,
+     * otherwise the next free one.
+     */
+    admit(peerId, id) {
+      if (disposed) return null;
+      const key = id || `peer:${peerId}`;
+      const existing = roster.get(key);
+
+      if (existing) {
+        const returning = !existing.present || existing.peerId !== peerId;
+        existing.peerId = peerId;
+        existing.present = true;
+        existing.lastSeen = Date.now();
+        if (returning) {
+          /**
+           * §21 — a returning player takes their own seat back. Their castle,
+           * coins and treasure are exactly where they left them, because the
+           * authoritative state never moved.
+           */
+          currentHost.setControl(existing.seat, 'HUMAN', { connectionStatus: 'CONNECTED' });
+          onEvent?.({ type: 'peer-returned', seat: existing.seat });
+          broadcastLobby();
+          pushViews({ force: true });
+        }
+        return existing.seat;
+      }
+
+      // A game already running has no free seats to hand out.
+      if (started) return null;
+
       const seat = nextFreeSeat();
       if (seat === null) return null;
-      seatOwners.set(seat, peerId);
-      host.setControl(seat, 'HUMAN', { connectionStatus: 'CONNECTED' });
+      roster.set(key, { seat, peerId, lastSeen: Date.now(), present: true });
+      currentHost.setControl(seat, 'HUMAN', { connectionStatus: 'CONNECTED' });
+      onEvent?.({ type: 'peer-seated', seat });
       broadcastLobby();
-      pushViews();
+      pushViews({ force: true });
       return seat;
     },
 
     /**
-     * A browser vanished. The computer covers the seat immediately so the
-     * round can still resolve — the takeover rule, applied across a network.
+     * A browser vanished.
+     *
+     * In a normal game the computer covers the seat immediately so the round
+     * can still resolve — the takeover rule, applied across a network. In a
+     * humans-only game no bot ever plays for a person, so the seat is retired
+     * instead, and if that leaves fewer than two players the game ends.
      */
-    release(peerId) {
-      const seat = seatOfPeer(peerId);
-      if (seat === null) return null;
-      seatOwners.delete(seat);
-      host.setControl(seat, 'AI', { reason: 'disconnected', connectionStatus: 'DISCONNECTED' });
+    release(peerId, { voluntary = false } = {}) {
+      const entry = entryOfPeer(peerId);
+      if (!entry || !entry.present) return null;
+      const seat = entry.seat;
+      entry.present = false;
+      entry.peerId = null;
+
+      if (!started) {
+        // Left the lobby before kick-off: free the seat entirely so the next
+        // arrival can have it.
+        for (const [key, e] of roster) if (e === entry) roster.delete(key);
+        broadcastLobby();
+        return seat;
+      }
+
+      if (onlyHumans) {
+        currentHost.setControl(seat, 'HUMAN', { connectionStatus: 'DISCONNECTED' });
+        currentHost.retire(seat);
+        onEvent?.({ type: 'peer-retired', seat, voluntary });
+        if (currentHost.getLiveHumanCount() < 2) {
+          currentHost.abandon('Not enough players remain to continue.');
+          onEvent?.({ type: 'abandoned' });
+        }
+      } else {
+        currentHost.setControl(seat, 'AI', {
+          reason: 'disconnected',
+          connectionStatus: 'DISCONNECTED',
+        });
+        onEvent?.({ type: 'peer-covered', seat });
+      }
+
       broadcastLobby();
-      pushViews();
+      pushViews({ force: true });
       return seat;
     },
 
-    seatOfPeer,
     dispose() {
-      clearInterval(heartbeat);
-      unsubscribe();
+      disposed = true;
+      clearInterval(lobbyBeat);
+      clearInterval(healthBeat);
+      if (pushTimer) clearTimeout(pushTimer);
+      unsubscribe?.();
     },
   };
+
+  /**
+   * Only events that change what a guest sees are worth a push. `tick` is
+   * emitted ten times a second and carries nothing a guest cannot compute from
+   * `view.timerDeadline`, so it is dropped here rather than flooding the wire.
+   */
+  function onHostEvent(evt) {
+    if (evt?.type === 'tick') return;
+    pushViews({ force: evt?.type === 'resolution' || evt?.type === 'finished' });
+  }
+
+  unsubscribe = currentHost.subscribe(onHostEvent);
 
   return api;
 }
@@ -3589,7 +4134,27 @@ function createRemoteGame({ net, onEvent, onLobby }) {
   let lastResolution = null;
   let reveal = null;
   let lastRound = 0;
+  let lastMessageAt = 0;
+  let clockOffset = 0; // hostNow - ourNow
+  let healthy = false;
   const listeners = new Set();
+
+  /**
+   * Outstanding intents, newest last. Each is re-sent until the host
+   * acknowledges its sequence number. Because a bid is an absolute placement
+   * rather than a delta, re-sending is always safe.
+   */
+  let seq = 0;
+  let ackedSeq = 0;
+  const outbox = new Map(); // seq -> { msg, sentAt, firstSentAt }
+
+  /**
+   * What we believe our bid to be, ahead of the host confirming it. The board
+   * has to respond to a tap immediately or the game feels broken; this is the
+   * optimistic half, and every host message reconciles it.
+   */
+  let pendingBid = null;
+  let pendingLock = false;
 
   const emit = (type, payload = {}) => {
     for (const fn of listeners) {
@@ -3601,17 +4166,100 @@ function createRemoteGame({ net, onEvent, onLobby }) {
     }
   };
 
+  /** Merge the optimistic bid over the last authoritative view. */
+  function effectiveView() {
+    if (!view) return null;
+    if (!pendingBid && !pendingLock) return view;
+    const total = pendingBid
+      ? Object.values(pendingBid).reduce((s, n) => s + (n || 0), 0)
+      : view.you.currentBidTotal;
+    return {
+      ...view,
+      you: {
+        ...view.you,
+        currentBid: pendingBid ? { ...pendingBid } : view.you.currentBid,
+        currentBidTotal: total,
+        locked: pendingLock || view.you.locked,
+      },
+    };
+  }
+
+  function send(msg) {
+    seq += 1;
+    outbox.set(seq, { msg: { ...msg, seq }, sentAt: 0, firstSentAt: Date.now() });
+    flushOutbox();
+    return seq;
+  }
+
+  function flushOutbox() {
+    const now = Date.now();
+    for (const [n, rec] of outbox) {
+      if (n <= ackedSeq) {
+        outbox.delete(n);
+        continue;
+      }
+      if (now - rec.firstSentAt > NET_TUNING.intentTimeoutMs) {
+        outbox.delete(n);
+        emit('intent-lost', { seq: n });
+        continue;
+      }
+      if (now - rec.sentAt < NET_TUNING.intentRetryMs) continue;
+      rec.sentAt = now;
+      try {
+        net.sendIntent(rec.msg);
+      } catch {
+        /* not connected this instant; the next sweep tries again */
+      }
+    }
+  }
+
+  function absorbAck(n) {
+    if (!(n > ackedSeq)) return;
+    ackedSeq = n;
+    for (const key of [...outbox.keys()]) if (key <= ackedSeq) outbox.delete(key);
+  }
+
+  net.onAck((msg) => {
+    lastMessageAt = Date.now();
+    absorbAck(Number(msg?.seq) || 0);
+  });
+
   net.onState((msg) => {
     if (!msg?.view) return;
+    lastMessageAt = Date.now();
+    if (typeof msg.hostNow === 'number') clockOffset = msg.hostNow - Date.now();
+    if (typeof msg.ackSeq === 'number') absorbAck(msg.ackSeq);
+
     const previous = view;
     view = msg.view;
     summary = msg.summary;
     presenting = msg.presenting;
-    reveal = msg.reveal;
+    if (msg.reveal) reveal = msg.reveal;
+
+    /**
+     * Reconcile the optimistic bid. Once every intent we sent has been
+     * acknowledged, the host's copy is by definition complete and ours is
+     * redundant — dropping it here is what stops a rejected bid (over budget,
+     * aimed off the board, locked too late) from sticking on screen.
+     */
+    if (!outbox.size) {
+      pendingBid = null;
+      pendingLock = false;
+    }
+    if (view.you.locked) pendingLock = false;
+    if (previous && previous.roundNumber !== view.roundNumber) {
+      pendingBid = null;
+      pendingLock = false;
+    }
 
     const incoming = msg.lastResolution;
     const isNewResolution = incoming && incoming.roundNumber !== lastRound;
     lastResolution = incoming;
+
+    if (!healthy) {
+      healthy = true;
+      emit('link-up');
+    }
 
     if (isNewResolution) {
       lastRound = incoming.roundNumber;
@@ -3624,11 +4272,29 @@ function createRemoteGame({ net, onEvent, onLobby }) {
     onEvent?.({ type: 'sync' });
   });
 
+  if (onLobby) net.onLobby((lobby) => onLobby(lobby));
+
+  /**
+   * The guest runs its own clock. The host sends an absolute `timerDeadline`,
+   * so the countdown can be rendered locally at 10 Hz without a single packet
+   * crossing the network — which is precisely the traffic that used to break
+   * the link. The same sweep retries unacknowledged intents and notices a
+   * silent host, rather than leaving the player staring at a frozen board.
+   */
+  const heartbeat = setInterval(() => {
+    flushOutbox();
+    if (view) emit('tick');
+    if (healthy && lastMessageAt && Date.now() - lastMessageAt > NET_TUNING.hostSilenceMs) {
+      healthy = false;
+      emit('link-down');
+    }
+  }, 100);
+
   const game = {
     isRemote: true,
 
     getView() {
-      return view;
+      return effectiveView();
     },
     getPublicSummary() {
       return summary;
@@ -3642,15 +4308,31 @@ function createRemoteGame({ net, onEvent, onLobby }) {
     },
     isPresenting: () => presenting,
     getSeat: () => view?.you?.seat ?? null,
+    /** Host clock minus ours, so deadlines line up across devices. */
+    getClockOffset: () => clockOffset,
+    isHealthy: () => healthy,
 
     /* writes are intents sent upstream; the host decides */
     stageBid(_seat, bid) {
-      net.sendIntent({ t: 'bid', bid });
+      pendingBid = { ...bid };
+      send({ t: 'bid', bid });
+      emit('state');
       return { ok: true };
     },
     lock() {
-      net.sendIntent({ t: 'lock' });
+      pendingLock = true;
+      send({ t: 'lock' });
+      emit('state');
       return { ok: true };
+    },
+    /** Tell the host we are leaving on purpose, so it need not wait us out. */
+    sayGoodbye() {
+      try {
+        seq += 1;
+        net.sendIntent({ t: 'bye', seq });
+      } catch {
+        /* nothing to do */
+      }
     },
 
     subscribe(fn) {
@@ -3658,6 +4340,8 @@ function createRemoteGame({ net, onEvent, onLobby }) {
       return () => listeners.delete(fn);
     },
     dispose() {
+      clearInterval(heartbeat);
+      outbox.clear();
       listeners.clear();
     },
   };
@@ -3855,6 +4539,9 @@ const app = {
   lastBalance: null,
   lastTick: -1,
   reveal: null,
+  /** Guest only: the host has gone quiet and we are waiting for it. */
+  linkDown: false,
+  wallFlashTimer: null,
 };
 
 function toast(msg, kind = '') {
@@ -3926,15 +4613,25 @@ function placeMarker(node, pos) {
  * Starting a game — solo, hosting, or joining
  * ------------------------------------------------------------------ */
 
-function newLocalHost(code, humanSeats = [0]) {
-  return createHost({
-    seed: code,
-    seats: [0, 1, 2, 3].map((i) => ({
+/**
+ * Build the authoritative host.
+ *
+ * `playerCount` matters for humans-only games: the engine is generic over it
+ * (castles, treasures, bids, replenishment and locking all iterate the roster
+ * rather than assuming four), so a three-person table is a three-seat game
+ * with no computer players in it at all — not a four-seat game with a bot
+ * quietly filling the gap.
+ */
+function newLocalHost(code, humanSeats = [0], playerCount = 4) {
+  const seats = [];
+  for (let i = 0; i < playerCount; i++) {
+    seats.push({
       playerId: `seat-${i}`,
       displayName: i === 0 ? 'You' : `Player ${i + 1}`,
       controlMode: humanSeats.includes(i) ? CONTROL_MODE.HUMAN : CONTROL_MODE.AI,
-    })),
-  });
+    });
+  }
+  return createHost({ seed: code, config: { playerCount }, seats });
 }
 
 /** Wire whichever game object we have into the board and start listening. */
@@ -3996,8 +4693,8 @@ function refreshLobbyState() {
     if (app.humansOnly) {
       status.textContent =
         humans < 2
-          ? 'Waiting for at least one more player to join.'
-          : `${humans} players ready. Start when you are.`;
+          ? 'Waiting for at least one more player to join. No bots will fill in.'
+          : `${humans} players. Start when you are — the game will have ${humans} seats, no bots.`;
     } else {
       status.textContent =
         humans === 1
@@ -4098,9 +4795,20 @@ async function prepareHostLobby() {
     app.bridge = attachHostToRoom({
       net: app.net,
       host: app.host,
+      humansOnly: app.humansOnly,
       onLobbyChange: (lobby) => {
         app.lobby = lobby;
         refreshLobbyState();
+      },
+      onEvent: (e) => {
+        if (e.type === 'peer-seated') sound.play('join');
+        if (e.type === 'peer-returned') toast('A player reconnected.', 'gold');
+        if (e.type === 'peer-covered') toast('A player dropped. The court covers their seat.');
+        if (e.type === 'peer-retired') toast('A player left the game.');
+        if (e.type === 'abandoned') {
+          toast('Not enough players remain. The game is over.', 'bad');
+          setTimeout(leaveToTitle, 2200);
+        }
       },
     });
   } catch {
@@ -4144,20 +4852,24 @@ async function prepareJoinLobby(code) {
 
   $('#room-status').textContent = 'Connected. Looking for the host…';
 
-  const remote = createRemoteGame({ net: app.net });
-  app.game = remote;
-
-  app.net.onLobby((lobby) => {
-    if (!seated) {
-      seated = true;
-      clearTimeout(giveUp);
-      sound.play('join');
-    }
-    app.lobby = lobby;
-    $('#room-status').classList.remove('error');
-    $('#room-status').textContent = "You're in. Waiting for the host…";
-    renderRoomSeats(lobby, remote.getSeat?.() ?? -1);
+  const remote = createRemoteGame({
+    net: app.net,
+    onLobby: (lobby) => {
+      if (!seated) {
+        seated = true;
+        clearTimeout(giveUp);
+        sound.play('join');
+      }
+      app.lobby = lobby;
+      app.humansOnly = !!lobby.humansOnly;
+      $('#room-status').classList.remove('error');
+      $('#room-status').textContent = lobby.humansOnly
+        ? "You're in. Humans only — waiting for the host…"
+        : "You're in. Waiting for the host…";
+      renderRoomSeats(lobby, remote.getSeat?.() ?? -1);
+    },
   });
+  app.game = remote;
 
   const unsub = remote.subscribe(() => {
     if (remote.getView() && $('#screen-game').hidden) {
@@ -4168,15 +4880,42 @@ async function prepareJoinLobby(code) {
   });
 }
 
-/** The host presses Start. Anyone seated comes along; empty seats stay AI. */
+/**
+ * The host presses Start.
+ *
+ * In a normal game any seat still empty is played by the computer, so the
+ * four-seat host built in the lobby is already correct.
+ *
+ * In a humans-only game it is not. The table has to be exactly the people who
+ * are actually here, which means two things: the roster is compacted into
+ * contiguous seats (a joiner may hold seat 2 while seat 1 sits empty), and the
+ * host is rebuilt with `playerCount` equal to the number of players. Both have
+ * to happen before `start()`, because castles and treasures are dealt at
+ * construction time.
+ */
 function startTheGame() {
   if ($('#btn-room-start').disabled) return;
   sound.unlock();
   sound.stopTheme();
   sound.play('press');
-  if (!app.host) app.host = newLocalHost(app.code);
+
+  if (app.humansOnly) {
+    const roster = app.bridge ? app.bridge.compactSeats() : [null];
+    if (roster.length < 2) {
+      sound.play('deny');
+      toast('A humans-only game needs at least two players.', 'bad');
+      return;
+    }
+    app.host?.dispose();
+    // Every seat is a person. No AI is constructed, so none can take over.
+    app.host = newLocalHost(app.code, [...roster.keys()], roster.length);
+    app.bridge?.rebind(app.host);
+  } else if (!app.host) {
+    app.host = newLocalHost(app.code);
+  }
+
   app.host.start();
-  app.bridge?.pushViews();
+  app.bridge?.markStarted();
   mountGame(wrapLocal(app.host, 0), 0);
 }
 
@@ -4202,6 +4941,31 @@ function onHostEvent(evt) {
       break;
     case 'tick':
       renderTimer();
+      break;
+    /**
+     * Guests only. A silent host used to leave the board frozen with no
+     * explanation; say so plainly instead, and clear it the moment state
+     * starts arriving again.
+     */
+    case 'link-down':
+      app.linkDown = true;
+      $('#status').innerHTML = '<span class="verdict">Reconnecting to the host…</span>';
+      break;
+    case 'link-up':
+      if (app.linkDown) {
+        app.linkDown = false;
+        toast('Reconnected.', 'gold');
+      }
+      render();
+      break;
+    /** An intent was never acknowledged. Tell the player rather than silently
+     *  showing a coin the host never received. */
+    case 'intent-lost':
+      toast('That did not reach the host. Try again.', 'bad');
+      render();
+      break;
+    case 'abandoned':
+      toast('The game ended: not enough players remain.', 'bad');
       break;
     default:
       render();
@@ -4242,13 +5006,18 @@ function renderSeatChips() {
       chip.classList.add(seat.locked ? 'locked' : 'pending');
       if (!seat.locked && seat.controlMode === CONTROL_MODE.AI) chip.classList.add('thinking');
     }
+    // A retired seat is a person who left a humans-only game. Nobody is
+    // playing it, so it must not read as either a live player or a bot.
+    if (seat.retired) chip.classList.add('retired');
     chip.appendChild(el('span', 'avatar', seat.controlMode === CONTROL_MODE.HUMAN ? ART.human : ART.bot));
     chip.appendChild(el('span', 'lock-badge', ART.lockClosed));
     // Identity is carried entirely by colour and icon; the title is for
     // screen readers and hover only.
-    chip.title = `${seat.controlMode === CONTROL_MODE.HUMAN ? 'Player' : 'Computer'}${
-      seat.seat === app.seat ? ' (you)' : ''
-    }${app.started ? (seat.locked ? ' — locked in' : ' — deciding') : ''}`;
+    chip.title = seat.retired
+      ? 'Left the game'
+      : `${seat.controlMode === CONTROL_MODE.HUMAN ? 'Player' : 'Computer'}${
+          seat.seat === app.seat ? ' (you)' : ''
+        }${app.started ? (seat.locked ? ' — locked in' : ' — deciding') : ''}`;
     strip.appendChild(chip);
   }
 }
@@ -4373,7 +5142,14 @@ function renderTimer() {
   let frac = 1;
 
   if (app.started && !app.animating && !app.game.isPresenting() && view.timerDeadline) {
-    remain = Math.max(0, (view.timerDeadline - Date.now()) / 1000);
+    /**
+     * `timerDeadline` is a host wall-clock timestamp. Two devices are rarely
+     * within a second of each other, so a guest rendering it against its own
+     * clock shows a countdown that is wrong by the skew — sometimes already
+     * expired. The offset the transport measures corrects for it.
+     */
+    const skew = app.game.getClockOffset?.() || 0;
+    remain = Math.max(0, (view.timerDeadline - (Date.now() + skew)) / 1000);
     frac = Math.max(0, Math.min(1, remain / (view.config.decisionTimerMs / 1000)));
   }
 
@@ -4622,10 +5398,23 @@ function walkQueen(res) {
   });
 }
 
+/**
+ * The boundary flash covers a strip of the board along the wall the queen hit.
+ * Two rules keep it from stealing input from the cells underneath it:
+ *
+ *   1. `pointer-events: none`, forced inline as well as in the stylesheet,
+ *      because `style.cssText = ''` wipes any inline value set previously.
+ *   2. The geometry is torn down once the animation ends, so a faded-out strip
+ *      is not left lying across the top row (or first column) of the board.
+ *
+ * Skipping either one reintroduces the bug where the queen standing against a
+ * wall could not be given coins in the directions she *can* still move.
+ */
 function flashWall(dir) {
   const flash = $('#wall-flash');
   const thick = '10%';
   flash.style.cssText = '';
+  flash.style.pointerEvents = 'none';
   const grad = (deg) => `linear-gradient(${deg}, rgba(255,205,110,.9), transparent)`;
   if (dir === 'UP') Object.assign(flash.style, { top: 0, left: 0, right: 0, height: thick, background: grad('180deg') });
   if (dir === 'DOWN') Object.assign(flash.style, { bottom: 0, left: 0, right: 0, height: thick, background: grad('0deg') });
@@ -4634,6 +5423,12 @@ function flashWall(dir) {
   flash.classList.remove('fire');
   void flash.offsetWidth;
   flash.classList.add('fire');
+  clearTimeout(app.wallFlashTimer);
+  app.wallFlashTimer = setTimeout(() => {
+    flash.classList.remove('fire');
+    flash.style.cssText = '';
+    flash.style.pointerEvents = 'none';
+  }, 700);
 }
 
 /* ------------------------------------------------------------------ *
@@ -4951,19 +5746,33 @@ function boot() {
   refreshSoundIcon();
 
   /**
-   * Browsers only start audio after a real gesture, and which gesture is hard
-   * to predict. Listen once on every kind of first interaction rather than
-   * relying on one particular button.
+   * Browsers only start audio after a real gesture, and which gesture counts
+   * differs between engines — Safari in particular is fussier than Chrome and
+   * does not always honour `pointerdown` alone. Listen on every plausible
+   * first interaction, and keep listening rather than unbinding after one:
+   * a context can be interrupted later and needs waking again.
+   *
+   * `sound.unlock()` is what permits the AudioContext to be constructed at
+   * all, so it must run inside these handlers and nowhere else.
    */
-  for (const evt of ['pointerdown', 'touchstart', 'keydown']) {
+  for (const evt of ['pointerdown', 'pointerup', 'touchstart', 'touchend', 'mousedown', 'click', 'keydown']) {
     document.addEventListener(
       evt,
       () => {
         sound.unlock();
         if (!$('#screen-title').hidden) sound.startTheme();
       },
-      { passive: true }
+      { passive: true, capture: true }
     );
+  }
+
+  /** Coming back from a background tab, a phone call or a locked screen. */
+  for (const evt of ['visibilitychange', 'focus', 'pageshow']) {
+    window.addEventListener(evt, () => {
+      if (document.visibilityState === 'hidden') return;
+      sound.resumeIfInterrupted();
+      if (!$('#screen-title').hidden && !sound.isMuted()) sound.startTheme();
+    });
   }
 
   // ---- start screen ----
@@ -4972,6 +5781,8 @@ function boot() {
   $('#btn-room-invite').onclick = () => inviteOthers(app.code);
   $('#chk-humans-only').onchange = (e) => {
     app.humansOnly = e.target.checked;
+    // The bridge decides what happens when somebody drops, so it has to know.
+    app.bridge?.setHumansOnly(app.humansOnly);
     refreshLobbyState();
   };
   $('#btn-room-newboard').onclick = () => {
@@ -5123,7 +5934,11 @@ function leaveRoom() {
 function leaveToTitle() {
   app.epoch++;
   app.animating = false;
+  app.linkDown = false;
   stopReplay();
+  // A deliberate exit should not make the table wait out a nine-second
+  // liveness timeout before the round can resolve.
+  app.game?.sayGoodbye?.();
   app.unsub?.();
   app.game?.dispose?.();
   app.game = null;
