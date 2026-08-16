@@ -4,9 +4,10 @@
   "description": "Queen's Tug — four hidden castles, one wandering queen. Static, dependency-free implementation.",
   "type": "module",
   "scripts": {
-    "test": "node tests/engine.test.js && node tests/host.test.js && node tests/ui.test.js",
+    "test": "node tests/engine.test.js && node tests/host.test.js && node tests/fixes.test.js && node tests/ui.test.js",
     "test:rules": "node tests/engine.test.js",
     "test:host": "node tests/host.test.js",
+    "test:fixes": "node tests/fixes.test.js",
     "test:ui": "node tests/ui.test.js",
     "simulate": "node tools/simulate.js",
     "build": "node build.js",
