@@ -214,7 +214,22 @@ function randomCode() {
   const abc = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
   let out = '';
   for (let i = 0; i < 6; i++) out += abc[Math.floor(Math.random() * abc.length)];
-  return `QT-${out}`;
+  return out;
+}
+
+/**
+ * Accept a game code however a person types it. The alphabet already excludes
+ * the characters people confuse — no 0/O, no 1/I/L — so the only real work is
+ * case, stray spaces, and the `QT-` prefix that used to be mandatory. Links
+ * shared before it was dropped still work, because the prefix is simply
+ * stripped rather than rejected.
+ */
+function normaliseCode(raw) {
+  return String(raw || '')
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, '')
+    .replace(/^QT-?/, '');
 }
 
 const inviteUrl = (code) => `${location.origin}${location.pathname}?game=${encodeURIComponent(code)}`;
@@ -371,6 +386,7 @@ function renderRoomSeats(lobby, mySeat = 0) {
     // In humans-only mode an empty seat is a person who has not arrived yet,
     // so it shows a human outline rather than a bot.
     chip.appendChild(el('span', 'avatar', open && !app.humansOnly && !unknown ? ART.bot : ART.human));
+    if (unknown) chip.classList.add('unknown');
     if (!open) {
       if (!previous.has('human' + s.seat)) chip.classList.add('joined');
     } else {
@@ -1482,10 +1498,15 @@ function boot() {
 
   // ---- join modal ----
   $('#btn-join-go').onclick = () => {
-    const raw = $('#join-input').value.trim().toUpperCase();
-    if (!raw) return;
+    const code = normaliseCode($('#join-input').value);
+    if (!code) return;
+    if (!/^[A-Z0-9]{6}$/.test(code)) {
+      sound.play('deny');
+      toast('A game code is six letters and numbers.', 'bad');
+      return;
+    }
     closeModals();
-    prepareJoinLobby(raw.startsWith('QT-') ? raw : `QT-${raw}`);
+    prepareJoinLobby(code);
   };
   $('#join-input').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') $('#btn-join-go').click();
@@ -1547,7 +1568,7 @@ function boot() {
 
   showScreen('screen-title');
   const joinCode = params.get('game');
-  if (joinCode) prepareJoinLobby(joinCode.toUpperCase());
+  if (joinCode) prepareJoinLobby(normaliseCode(joinCode));
   else prepareHostLobby();
 }
 
