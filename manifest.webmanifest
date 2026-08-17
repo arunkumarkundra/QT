@@ -1,0 +1,26 @@
+{
+  "name": "Queen's Tug",
+  "short_name": "Queen's Tug",
+  "description": "Four hidden castles. One wandering queen. Bid in secret to tug her onto your castle.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#070a0f",
+  "theme_color": "#070a0f",
+  "categories": ["games", "board"],
+  "icons": [
+    {
+      "src": "./assets/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./assets/og.jpg",
+      "sizes": "1200x630",
+      "type": "image/jpeg",
+      "purpose": "any"
+    }
+  ]
+}
