@@ -153,7 +153,36 @@ export function clientId() {
  */
 export async function openRoom({ code, isHost, onEvent }) {
   const { joinRoom } = await loadTrystero();
-  const room = joinRoom({ appId: APP_ID }, code);
+  /**
+   * Two devices on the same Wi-Fi can open a direct channel. A laptop on Wi-Fi
+   * and a phone on mobile data usually cannot: carriers hide every phone behind
+   * a shared address that refuses unsolicited inbound connections, so neither
+   * side ever sees the other. STUN only reports our address, which does not
+   * help here. TURN relays the traffic through a public machine when the direct
+   * route fails — the difference between multiplayer that works on one desk and
+   * multiplayer that works for invited players.
+   */
+  const room = joinRoom(
+    {
+      appId: APP_ID,
+      rtcConfig: {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+          {
+            urls: [
+              'turn:openrelay.metered.ca:80',
+              'turn:openrelay.metered.ca:443',
+              'turn:openrelay.metered.ca:443?transport=tcp',
+            ],
+            username: 'openrelayproject',
+            credential: 'openrelayproject',
+          },
+        ],
+      },
+    },
+    code
+  );
 
   // Trystero action names are capped at 12 bytes.
   const [sendState, onState] = room.makeAction('state');
