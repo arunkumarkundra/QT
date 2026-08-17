@@ -49,6 +49,16 @@ export function createHost({
   seats = [],
   turnMode = TURN_MODE.SIMULTANEOUS,
   autoResolve = true,
+  /**
+   * A browser wants a polling clock: the countdown on screen is redrawn from
+   * the `tick` event ten times a second. A server does not, and must not — an
+   * interval that never idles keeps a Durable Object resident and billable for
+   * the whole game while doing nothing but reading the clock. With this off,
+   * nothing changes about the rules; the owner simply becomes responsible for
+   * calling `advanceClock()` when `getTimerDeadline()` has passed, which the
+   * server does from a single alarm.
+   */
+  autoTicker = true,
 } = {}) {
   /** The authoritative state. Nothing outside this closure may touch it. */
   let state = createGame({ seed, config, players: seats });
@@ -194,6 +204,7 @@ export function createHost({
 
   function startTicker() {
     stopTicker();
+    if (!autoTicker) return;
     ticker = setInterval(tick, 100);
   }
   function stopTicker() {
@@ -243,6 +254,24 @@ export function createHost({
 
     isPresenting: () => Date.now() < presentingUntil,
     presentingUntil: () => presentingUntil,
+
+    /**
+     * The absolute moment this round's timer expires, or null while the clock
+     * is paused. An owner running without `autoTicker` schedules its single
+     * wake-up from this rather than polling.
+     */
+    getTimerDeadline: () => state.timerDeadline,
+
+    /**
+     * Step the clock by hand. Identical to what the internal ticker does, and
+     * safe to call at any time: it returns immediately unless the game is
+     * playing, the presentation window has closed, and a deadline has actually
+     * passed. Idempotent, so an early or duplicated wake-up costs nothing.
+     */
+    advanceClock() {
+      tick();
+      return host;
+    },
     getActiveSeat: () => activeSeat,
     getTurnMode: () => turnMode,
     getConfig: () => ({ ...state.config }),

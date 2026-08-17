@@ -14,7 +14,7 @@
 import { createHost } from './host.js';
 import { DIRECTIONS, OPPOSITE, SEAT_COLORS, UI_TIMING, CONTROL_MODE, setPacing } from './config.js';
 import { sound } from './sound.js';
-import { openRoom, attachHostToRoom, createRemoteGame, multiplayerSupported } from './multiplayer.js';
+import { connectRoom, multiplayerSupported } from './net.js';
 
 /* ------------------------------------------------------------------ *
  * Helpers
@@ -161,12 +161,16 @@ const ART = {
 const app = {
   /** The authoritative host when we run it, or a remote proxy when we don't. */
   game: null,
-  /** Set only when this browser is the authority. */
+  /**
+   * A local authoritative host. Online games no longer use one — the server is
+   * the authority — so this is set only for solo and pass-and-play, and when
+   * the network is unavailable.
+   */
   host: null,
-  net: null,
-  bridge: null,
-  isHost: true,
+  /** True while we are connected to a game on the server. */
   online: false,
+  /** Server-side flag: only one player may start the game or change settings. */
+  isHost: true,
   seat: 0,
   /** Order coins were placed, so a single undo is always possible. */
   placements: [],
@@ -410,171 +414,123 @@ function setLobbyMode(mode) {
 }
 
 /**
- * Open the start screen ready to host. A room is opened in the background so a
- * shared code works the moment it is handed over; if the relay is unreachable
- * the game still plays perfectly well against the computer.
- */
-async function prepareHostLobby() {
-  app.online = true;
-  app.isHost = true;
-  showCode(randomCode());
-  setLobbyMode('host');
-  $('#room-status').classList.remove('error');
-  app.lobby = soloLobby();
-  refreshLobbyState();
-
-  leaveRoom();
-  if (app.host) app.host.dispose();
-  app.host = newLocalHost(app.code);
-  refreshLobbyState();
-
-  if (!multiplayerSupported()) return;
-
-  try {
-    app.net = await openRoom({
-      code: app.code,
-      isHost: true,
-      onEvent: (e) => {
-        // Seating happens ONLY when the joiner's "hello" arrives, because that
-        // message carries the durable player id. Seating here on the raw
-        // connection as well gave the same browser a second seat — the phantom
-        // player, and the humans-only game that never started.
-        if (e.type === 'peer-leave') app.bridge?.release(e.peerId);
-      },
-      
-    });
-    app.bridge = attachHostToRoom({
-      net: app.net,
-      host: app.host,
-      humansOnly: app.humansOnly,
-      onLobbyChange: (lobby) => {
-        app.lobby = lobby;
-        refreshLobbyState();
-      },
-      onEvent: (e) => {
-        if (e.type === 'peer-seated') sound.play('join');
-        if (e.type === 'peer-returned') toast('A player reconnected.', 'gold');
-        if (e.type === 'peer-covered') toast('A player dropped. The court covers their seat.');
-        if (e.type === 'peer-retired') toast('A player left the game.');
-        if (e.type === 'abandoned') {
-          toast('Not enough players remain. The game is over.', 'bad');
-          setTimeout(leaveToTitle, 2200);
-        }
-      },
-    });
-  } catch {
-    $('#room-status').textContent =
-      "Online play is unavailable. You can still play against the court's bots.";
-    $('#room-status').classList.add('error');
-  }
-}
-
-/**
- * Someone opened a shared link or typed a code.
+ * Enter a game — creating a new one, or joining a code somebody shared.
  *
- * There is deliberately no deadline here. Gathering players takes minutes, not
- * seconds: the host may not have opened their screen yet, an invite may sit
- * unread in a chat, a phone may be locked. The old twenty-second give-up
- * silently flipped the joiner back to hosting, so the player could no longer
- * tell whether they were still in the queue — and a host who opened up a minute
- * later found nobody waiting. The room now stays open indefinitely, reports the
- * stage actually reached, and after a while offers advice without acting on it.
+ * Creating and joining are the same act now. The authoritative game lives on
+ * the server, so nobody's browser is special: the first player to arrive is
+ * simply granted the right to press Start, and the server says who that is.
+ * The old build had to fork here because one browser ran the engine for
+ * everybody else.
+ *
+ * There is deliberately no deadline. Gathering players takes minutes, not
+ * seconds: an invite may sit unread, a phone may be locked. The connection
+ * stays open indefinitely, reports the stage actually reached, and never flips
+ * the player somewhere they did not ask to go.
  */
-async function prepareJoinLobby(code) {
-  const WAITING = 'Waiting for the host to open the game. You will be seated automatically.';
-  const LOOKING = 'Found the game. Taking a seat…';
+async function enterRoom(code) {
+  leaveRoom();
 
   app.online = true;
   app.isHost = false;
+  app.lobby = null;
   showCode(code);
   setLobbyMode('join');
   $('#room-status').classList.remove('error');
   $('#room-status').textContent = 'Connecting…';
 
-  // Until the host answers we do not know who is at the table. Unknown seats
-  // are drawn as outlines, never as bots.
+  // Until the server answers we do not know who is at the table. Unknown seats
+  // are drawn as outlines, never as bots — telling a player that all four
+  // seats are computers when we have not yet asked is simply untrue.
   renderRoomSeats(
-    { seats: [{ seat: 0, kind: 'human' }, ...[1, 2, 3].map((seat) => ({ seat, kind: 'pending' }))] },
+    { seats: [{ seat: 0, kind: 'pending' }, ...[1, 2, 3].map((seat) => ({ seat, kind: 'pending' }))] },
     -1
   );
 
-  leaveRoom();
-  if (app.joinWatch) clearInterval(app.joinWatch);
-
-  let seated = false;
-  let answered = false;
-
-  try {
-    app.net = await openRoom({ code, isHost: false, onEvent: () => {} });
-  } catch {
-    $('#room-status').textContent = "Online play is unavailable. You can still play against the court's bots.";
-    $('#room-status').classList.add('error');
-    setLobbyMode('host');
+  if (!multiplayerSupported()) {
+    goOffline('This browser cannot play online. You can still play against the court’s bots.');
     return;
   }
 
-  $('#room-status').textContent = WAITING;
+  let seated = false;
 
-  /** Report the room's real state rather than racing a stopwatch against it. */
-  app.joinWatch = setInterval(() => {
-    if (!app.net) {
-      clearInterval(app.joinWatch);
-      app.joinWatch = null;
-      return;
-    }
-    if (seated || answered) return;
-    $('#room-status').textContent = app.net.getPeers().length ? LOOKING : WAITING;
-  }, 1500);
+  const remote = connectRoom({
+    code,
 
-  /** Not a timeout — advice. Nothing is torn down and no mode is changed. */
-  app.joinTimer = setTimeout(() => {
-    if (seated) return;
-    $('#room-status').textContent =
-      `Still waiting on ${code}. The host needs this game open on their screen — ` +
-      'you will join automatically the moment they appear.';
-  }, 30000);
-
-  const remote = createRemoteGame({
-    net: app.net,
     onLobby: (lobby) => {
-      answered = true;
-      // The host now tells each guest its own seat. Before this, a joiner could
-      // not know which chair was theirs until the game had already begun.
-      const mySeat = Number.isInteger(lobby.yourSeat) ? lobby.yourSeat : -1;
       app.lobby = lobby;
       app.humansOnly = !!lobby.humansOnly;
+      app.isHost = !!lobby.admin;
+      $('#chk-humans-only').checked = app.humansOnly;
       $('#room-status').classList.remove('error');
 
-      if (mySeat >= 0) {
-        if (!seated) {
-          seated = true;
-          clearTimeout(app.joinTimer);
-          sound.play('join');
-        }
-        $('#room-status').textContent = lobby.humansOnly
-          ? `You're in — seat ${mySeat + 1}. Humans only; waiting for the host to start.`
-          : `You're in — seat ${mySeat + 1}. Waiting for the host to start.`;
-      } else if (lobby.started) {
-        $('#room-status').textContent = 'That game has already started. Ask the host for a new code.';
-      } else {
-        $('#room-status').textContent = LOOKING;
+      if (lobby.inProgress) {
+        $('#room-status').textContent =
+          'That game has already started. Ask for a new code, or start your own board.';
+        setLobbyMode('join');
+        renderRoomSeats(lobby, -1);
+        return;
       }
+
+      const mySeat = Number.isInteger(lobby.yourSeat) ? lobby.yourSeat : -1;
+      app.seat = mySeat;
+
+      if (!seated && mySeat >= 0) {
+        seated = true;
+        sound.play('join');
+      }
+
+      // Whoever may press Start sees the host controls. That is decided by the
+      // server, not by which browser happened to generate the code.
+      setLobbyMode(lobby.admin ? 'host' : 'join');
       renderRoomSeats(lobby, mySeat);
+      refreshLobbyState();
+    },
+
+    onEvent: (e) => {
+      if (e.type === 'error' && e.message) toast(e.message, 'bad');
     },
   });
+
   app.game = remote;
 
+  /**
+   * The game mounts on the first view that arrives, whoever started it. Both
+   * players take this same path now — there is no local branch for the player
+   * who created the room.
+   */
   const unsub = remote.subscribe(() => {
     if (remote.getView() && $('#screen-game').hidden) {
       unsub();
-      clearTimeout(app.joinTimer);
-      if (app.joinWatch) {
-        clearInterval(app.joinWatch);
-        app.joinWatch = null;
-      }
+      sound.stopTheme();
       mountGame(remote, remote.getSeat());
     }
   });
+}
+
+/** Creating a game is entering a room nobody is in yet. */
+async function prepareHostLobby() {
+  await enterRoom(randomCode());
+}
+
+/** Joining is entering a room somebody else already opened. */
+async function prepareJoinLobby(code) {
+  await enterRoom(code);
+}
+
+/**
+ * The network is unavailable. Solo play against the computer needs no server
+ * at all, so the game stays perfectly playable — it just cannot be shared.
+ */
+function goOffline(message) {
+  app.online = false;
+  app.isHost = true;
+  app.lobby = soloLobby();
+  if (app.host) app.host.dispose();
+  app.host = newLocalHost(app.code);
+  setLobbyMode('host');
+  $('#room-status').textContent = message;
+  $('#room-status').classList.add('error');
+  refreshLobbyState();
 }
 
 /**
@@ -590,29 +546,43 @@ async function prepareJoinLobby(code) {
  * to happen before `start()`, because castles and treasures are dealt at
  * construction time.
  */
+/**
+ * Start is pressed.
+ *
+ * Online, this is a request, not an action: the server builds the game,
+ * chooses the seating and deals the castles, then sends everyone their view.
+ * We mount when that view arrives, exactly like every other player — which is
+ * why there is no local host to construct, no roster to compact and no seats to
+ * renumber here any more. The server does all of it, once, for everybody.
+ *
+ * Offline, there is nobody else to co-ordinate with, so a local host is built
+ * and the game plays against the computer as it always has.
+ */
 function startTheGame() {
   if ($('#btn-room-start').disabled) return;
   sound.unlock();
   sound.stopTheme();
   sound.play('press');
 
-  if (app.humansOnly) {
-    const roster = app.bridge ? app.bridge.compactSeats() : [null];
-    if (roster.length < 2) {
+  if (app.online && app.game?.isRemote) {
+    if (!app.game.isAdmin()) {
+      sound.play('deny');
+      toast('Only the player who opened this game can start it.', 'bad');
+      return;
+    }
+    const humans = (app.lobby?.seats || []).filter((s) => s.kind === 'human').length;
+    if (app.humansOnly && humans < 2) {
       sound.play('deny');
       toast('A humans-only game needs at least two players.', 'bad');
       return;
     }
-    app.host?.dispose();
-    // Every seat is a person. No AI is constructed, so none can take over.
-    app.host = newLocalHost(app.code, [...roster.keys()], roster.length);
-    app.bridge?.rebind(app.host);
-  } else if (!app.host) {
-    app.host = newLocalHost(app.code);
+    $('#room-status').textContent = 'Dealing the board…';
+    app.game.startGame();
+    return;
   }
 
+  if (!app.host) app.host = newLocalHost(app.code);
   app.host.start();
-  app.bridge?.markStarted();
   mountGame(wrapLocal(app.host, 0), 0);
 }
 
@@ -1478,8 +1448,9 @@ function boot() {
   $('#btn-room-invite').onclick = () => inviteOthers(app.code);
   $('#chk-humans-only').onchange = (e) => {
     app.humansOnly = e.target.checked;
-    // The bridge decides what happens when somebody drops, so it has to know.
-    app.bridge?.setHumansOnly(app.humansOnly);
+    // The server decides what happens when somebody drops, and it owns the
+    // setting for everyone at the table, so it has to be told.
+    app.game?.setHumansOnly?.(app.humansOnly);
     refreshLobbyState();
   };
   $('#btn-room-newboard').onclick = () => {
@@ -1621,10 +1592,15 @@ async function copyLink(code) {
 function leaveRoom() {
   if (app.joinTimer) clearTimeout(app.joinTimer);
   app.joinTimer = null;
-  app.bridge?.dispose();
-  app.net?.leave();
-  app.bridge = null;
-  app.net = null;
+  if (app.joinWatch) clearInterval(app.joinWatch);
+  app.joinWatch = null;
+  // Only tear down a lobby connection here. A mounted game owns its own
+  // connection and is disposed by leaveToTitle.
+  if (app.online && app.game?.isRemote && !app.started) {
+    app.game.sayGoodbye?.();
+    app.game.dispose?.();
+    app.game = null;
+  }
   app.online = false;
 }
 
@@ -1639,7 +1615,10 @@ function leaveToTitle() {
   app.unsub?.();
   app.game?.dispose?.();
   app.game = null;
+  app.host?.dispose?.();
+  app.host = null;
   app.started = false;
+  app.online = false;
   showScreen('screen-title');
   prepareHostLobby();
 }
