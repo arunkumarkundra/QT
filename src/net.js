@@ -37,7 +37,7 @@
  *  Keep the wss:// and keep the /ws at the end.
  * ─────────────────────────────────────────────────────────────────────────
  */
-export const SERVER_URL = 'wss://queens-tug.YOUR-SUBDOMAIN.workers.dev/ws';
+export const SERVER_URL = 'wss://qt.arunkumarkundra.workers.dev/ws';
 
 const CLIENT_ID_KEY = 'qt-client-id';
 let fallbackClientId = null;
