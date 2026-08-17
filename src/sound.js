@@ -94,7 +94,27 @@ function ensureContext() {
     } catch {
       /* older engines: the resume().then path below still covers us */
     }
+
+    /**
+     * A one-sample buffer started INSIDE the gesture that created the context
+     * is what convinces iOS the page may make noise. Waiting for the context to
+     * report `running` first guaranteed this never happened during the opening
+     * click: a freshly built context is always suspended, so the kick ran later
+     * from a statechange callback, which is not a gesture. That is why the first
+     * click on Safari was silent and the second was the first one heard.
+     */
+    audio.kicked = true;
+    try {
+      const buf = audio.ctx.createBuffer(1, 1, audio.ctx.sampleRate);
+      const src = audio.ctx.createBufferSource();
+      src.buffer = buf;
+      src.connect(audio.ctx.destination);
+      src.start(0);
+    } catch {
+      /* harmless */
+    }
   }
+    
 
   // 'suspended' is the autoplay lock; 'interrupted' is Safari after a call,
   // an alarm, or a background tab. Both are cured by resume().
@@ -111,22 +131,8 @@ function ensureContext() {
 
   flushPending();
 
-  if (!audio.kicked && audio.ctx.state === 'running') {
-    // A one-sample buffer played from inside the gesture is what actually
-    // convinces iOS the page is allowed to make noise. Doing it while the
-    // context is still suspended wastes the only chance we get, so it waits
-    // until the hardware is genuinely running.
-    audio.kicked = true;
-    try {
-      const buf = audio.ctx.createBuffer(1, 1, audio.ctx.sampleRate);
-      const src = audio.ctx.createBufferSource();
-      src.buffer = buf;
-      src.connect(audio.ctx.destination);
-      src.start(0);
-    } catch {
-      /* harmless */
-    }
-  }
+  
+  
 
   return audio.ctx;
 }
