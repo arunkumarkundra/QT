@@ -217,15 +217,21 @@ export async function openRoom({ code, isHost, onEvent }) {
    * host can restore a seat we already held.
    */
   if (!isHost) {
+    
     let tries = 0;
     const knock = () => {
-      if (tries++ > 40) return;
+      /**
+       * Knock forever, not forty times. The old cap gave up after roughly a
+       * minute, so a guest who opened the link before the host opened their
+       * screen could never be seated no matter how long they waited. An
+       * unanswered hello costs nothing, and this doubles as reconnection.
+       */
       try {
         sendHello({ t: 'hello', id: api.id });
       } catch {
         /* not connected yet */
       }
-      api._knockTimer = setTimeout(knock, tries < 10 ? 700 : 2000);
+      api._knockTimer = setTimeout(knock, tries++ < 10 ? 700 : 3000);
     };
     knock();
     const stopLeaving = api.leave;
@@ -311,14 +317,39 @@ export function attachHostToRoom({ net, host, onLobbyChange, onEvent, humansOnly
     };
   }
 
+
   function broadcastLobby() {
     if (disposed) return;
-    try {
-      net.sendLobby(lobbySnapshot());
-    } catch {
-      /* nobody connected yet */
+    const base = lobbySnapshot();
+
+    /**
+     * Sent per peer, not broadcast, because each guest needs one thing nobody
+     * else does: its own seat number. Without it a joiner cannot highlight its
+     * chair, and could not know its seat at all until the game had started.
+     */
+    const seatedPeers = new Set();
+    for (const entry of roster.values()) {
+      if (!entry.peerId) continue;
+      seatedPeers.add(entry.peerId);
+      try {
+        net.sendLobby({ ...base, yourSeat: entry.seat }, entry.peerId);
+      } catch {
+        /* the peer went away between the check and the send */
+      }
     }
-    onLobbyChange?.(lobbySnapshot());
+
+    // A peer that has connected but is not seated yet still deserves to see the
+    // table, so its screen can say "found the game" rather than "not found".
+    for (const peerId of net.getPeers()) {
+      if (seatedPeers.has(peerId)) continue;
+      try {
+        net.sendLobby({ ...base, yourSeat: null }, peerId);
+      } catch {
+        /* gone */
+      }
+    }
+
+    onLobbyChange?.(base);
   }
 
   /**
@@ -462,7 +493,15 @@ export function attachHostToRoom({ net, host, onLobbyChange, onEvent, humansOnly
       } catch {
         /* gone */
       }
-      if (now - entry.lastSeen > NET_TUNING.peerTimeoutMs) api.release(entry.peerId);
+      /**
+       * Mid-game a silent player must be noticed quickly so the round can
+       * resolve. In the lobby there is nothing to resolve and everyone is
+       * waiting on everyone else, so be far more patient — dropping a seat
+       * here just made players appear to change chairs while they waited.
+       */
+      const silenceLimit = started ? NET_TUNING.peerTimeoutMs : 30000;
+      if (now - entry.lastSeen > silenceLimit) api.release(entry.peerId);
+      
     }
     if (started) pushViews({ force: true });
   }, Math.min(NET_TUNING.pingMs, NET_TUNING.keepAliveMs));
@@ -517,10 +556,31 @@ export function attachHostToRoom({ net, host, onLobbyChange, onEvent, humansOnly
      * A browser appeared. Give it the seat it already held if we know it,
      * otherwise the next free one.
      */
+
     admit(peerId, id) {
       if (disposed) return null;
-      const key = id || `peer:${peerId}`;
-      const existing = roster.get(key);
+      /**
+       * Seating requires the durable player id carried by the "hello" message.
+       * Falling back to a temporary connection id filed the entry under a key
+       * the hello could never match, so the same browser was handed a second
+       * seat a moment later. That is the phantom player.
+       */
+      if (!id) return null;
+
+      // One connection may hold exactly one seat. Anything else is stale.
+      for (const [staleKey, stale] of roster) {
+        if (stale.peerId === peerId && staleKey !== id) {
+          if (started) {
+            stale.peerId = null;
+            stale.present = false;
+          } else {
+            roster.delete(staleKey);
+          }
+        }
+      }
+
+      const existing = roster.get(id);
+    
 
       if (existing) {
         const returning = !existing.present || existing.peerId !== peerId;
@@ -546,7 +606,7 @@ export function attachHostToRoom({ net, host, onLobbyChange, onEvent, humansOnly
 
       const seat = nextFreeSeat();
       if (seat === null) return null;
-      roster.set(key, { seat, peerId, lastSeen: Date.now(), present: true });
+      roster.set(id, { seat, peerId, lastSeen: Date.now(), present: true });
       currentHost.setControl(seat, 'HUMAN', { connectionStatus: 'CONNECTED' });
       onEvent?.({ type: 'peer-seated', seat });
       broadcastLobby();
