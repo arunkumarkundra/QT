@@ -428,14 +428,13 @@ async function prepareHostLobby() {
       code: app.code,
       isHost: true,
       onEvent: (e) => {
-        // The authoritative seating signal is the joiner's greeting, handled
-        // inside the bridge. This is a backup for peers that connect quietly.
-        if (e.type === 'peer-join') {
-          const seat = app.bridge?.admit(e.peerId);
-          if (seat !== null && seat !== undefined) sound.play('join');
-        }
+        // Seating happens ONLY when the joiner's "hello" arrives, because that
+        // message carries the durable player id. Seating here on the raw
+        // connection as well gave the same browser a second seat — the phantom
+        // player, and the humans-only game that never started.
         if (e.type === 'peer-leave') app.bridge?.release(e.peerId);
       },
+      
     });
     app.bridge = attachHostToRoom({
       net: app.net,
