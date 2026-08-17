@@ -54,7 +54,7 @@ export const DEFAULT_CONFIG = {
   replenishCoins: 100,
 
   /** Seconds a player gets to plan each round. Tune here. */
-  decisionTimerMs: 15000,
+  decisionTimerMs: 20000,
 
   /**
    * §4.1 — Conservative safety margin. Hidden objects must be at least this
