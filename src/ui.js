@@ -360,9 +360,13 @@ function renderRoomSeats(lobby, mySeat = 0) {
     chip.dataset.seat = s.seat;
     chip.dataset.kind = s.kind;
     const open = s.kind !== 'human';
+    // 'pending' means the host has not answered yet, so we do not know who is
+    // in that seat. Drawing a bot there told every invited player that all four
+    // seats were computers, which was simply untrue.
+    const unknown = s.kind === 'pending';
     // In humans-only mode an empty seat is a person who has not arrived yet,
     // so it shows a human outline rather than a bot.
-    chip.appendChild(el('span', 'avatar', open && !app.humansOnly ? ART.bot : ART.human));
+    chip.appendChild(el('span', 'avatar', open && !app.humansOnly && !unknown ? ART.bot : ART.human));
     if (!open) {
       if (!previous.has('human' + s.seat)) chip.classList.add('joined');
     } else {
@@ -372,9 +376,12 @@ function renderRoomSeats(lobby, mySeat = 0) {
     if (s.seat === mySeat) chip.classList.add('is-you');
     chip.title = !open
       ? 'Player'
-      : app.humansOnly
-        ? 'Waiting for a player'
-        : "Open seat — one of the court's bots will play it";
+      : unknown
+        ? 'Waiting for the host'
+        : app.humansOnly
+          ? 'Waiting for a player'
+          : "Open seat — one of the court's bots will play it";
+    
     box.appendChild(chip);
   }
 }
@@ -462,55 +469,97 @@ async function prepareHostLobby() {
   }
 }
 
-/** Someone opened a shared link or typed a code. */
+/**
+ * Someone opened a shared link or typed a code.
+ *
+ * There is deliberately no deadline here. Gathering players takes minutes, not
+ * seconds: the host may not have opened their screen yet, an invite may sit
+ * unread in a chat, a phone may be locked. The old twenty-second give-up
+ * silently flipped the joiner back to hosting, so the player could no longer
+ * tell whether they were still in the queue — and a host who opened up a minute
+ * later found nobody waiting. The room now stays open indefinitely, reports the
+ * stage actually reached, and after a while offers advice without acting on it.
+ */
 async function prepareJoinLobby(code) {
+  const WAITING = 'Waiting for the host to open the game. You will be seated automatically.';
+  const LOOKING = 'Found the game. Taking a seat…';
+
   app.online = true;
   app.isHost = false;
   showCode(code);
   setLobbyMode('join');
   $('#room-status').classList.remove('error');
-  $('#room-status').textContent = 'Finding your game…';
-  renderRoomSeats({ seats: [0, 1, 2, 3].map((seat) => ({ seat, kind: 'bot' })) }, -1);
+  $('#room-status').textContent = 'Connecting…';
+
+  // Until the host answers we do not know who is at the table. Unknown seats
+  // are drawn as outlines, never as bots.
+  renderRoomSeats(
+    { seats: [{ seat: 0, kind: 'human' }, ...[1, 2, 3].map((seat) => ({ seat, kind: 'pending' }))] },
+    -1
+  );
 
   leaveRoom();
+  if (app.joinWatch) clearInterval(app.joinWatch);
 
   let seated = false;
-  /** If the host never answers, say so rather than spinning forever. */
-  const giveUp = setTimeout(() => {
-    if (seated) return;
-    $('#room-status').textContent = 'Game not found. Check the code or start a new game.';
-    $('#room-status').classList.add('error');
-    setLobbyMode('host');
-  }, 20000);
-  app.joinTimer = giveUp;
+  let answered = false;
 
   try {
     app.net = await openRoom({ code, isHost: false, onEvent: () => {} });
   } catch {
-    clearTimeout(giveUp);
     $('#room-status').textContent = "Online play is unavailable. You can still play against the court's bots.";
     $('#room-status').classList.add('error');
     setLobbyMode('host');
     return;
   }
 
-  $('#room-status').textContent = 'Connected. Looking for the host…';
+  $('#room-status').textContent = WAITING;
+
+  /** Report the room's real state rather than racing a stopwatch against it. */
+  app.joinWatch = setInterval(() => {
+    if (!app.net) {
+      clearInterval(app.joinWatch);
+      app.joinWatch = null;
+      return;
+    }
+    if (seated || answered) return;
+    $('#room-status').textContent = app.net.getPeers().length ? LOOKING : WAITING;
+  }, 1500);
+
+  /** Not a timeout — advice. Nothing is torn down and no mode is changed. */
+  app.joinTimer = setTimeout(() => {
+    if (seated) return;
+    $('#room-status').textContent =
+      `Still waiting on ${code}. The host needs this game open on their screen — ` +
+      'you will join automatically the moment they appear.';
+  }, 30000);
 
   const remote = createRemoteGame({
     net: app.net,
     onLobby: (lobby) => {
-      if (!seated) {
-        seated = true;
-        clearTimeout(giveUp);
-        sound.play('join');
-      }
+      answered = true;
+      // The host now tells each guest its own seat. Before this, a joiner could
+      // not know which chair was theirs until the game had already begun.
+      const mySeat = Number.isInteger(lobby.yourSeat) ? lobby.yourSeat : -1;
       app.lobby = lobby;
       app.humansOnly = !!lobby.humansOnly;
       $('#room-status').classList.remove('error');
-      $('#room-status').textContent = lobby.humansOnly
-        ? "You're in. Humans only — waiting for the host…"
-        : "You're in. Waiting for the host…";
-      renderRoomSeats(lobby, remote.getSeat?.() ?? -1);
+
+      if (mySeat >= 0) {
+        if (!seated) {
+          seated = true;
+          clearTimeout(app.joinTimer);
+          sound.play('join');
+        }
+        $('#room-status').textContent = lobby.humansOnly
+          ? `You're in — seat ${mySeat + 1}. Humans only; waiting for the host to start.`
+          : `You're in — seat ${mySeat + 1}. Waiting for the host to start.`;
+      } else if (lobby.started) {
+        $('#room-status').textContent = 'That game has already started. Ask the host for a new code.';
+      } else {
+        $('#room-status').textContent = LOOKING;
+      }
+      renderRoomSeats(lobby, mySeat);
     },
   });
   app.game = remote;
@@ -518,7 +567,11 @@ async function prepareJoinLobby(code) {
   const unsub = remote.subscribe(() => {
     if (remote.getView() && $('#screen-game').hidden) {
       unsub();
-      clearTimeout(giveUp);
+      clearTimeout(app.joinTimer);
+      if (app.joinWatch) {
+        clearInterval(app.joinWatch);
+        app.joinWatch = null;
+      }
       mountGame(remote, remote.getSeat());
     }
   });
