@@ -56,8 +56,36 @@
 import { createHost } from '../src/host.js';
 import { CONTROL_MODE, CONNECTION, STATUS } from '../src/config.js';
 
-/** Game codes are the room key, so they are validated before routing. */
-const CODE_RE = /^QT-[A-Z0-9]{6}$/;
+/**
+ * Game codes are the room key, so they are validated before routing. The old
+ * `QT-` prefix is accepted and stripped so links shared before it was dropped
+ * still resolve to the right room.
+ */
+const CODE_RE = /^[A-Z0-9]{6}$/;
+const normaliseCode = (raw) => (raw || '').toUpperCase().replace(/^QT-/, '').trim();
+
+/**
+ * Browsers send an Origin header on the WebSocket handshake, so a page on
+ * somebody else's domain cannot quietly point its users at this server and
+ * spend the quota. It is not a security boundary against a determined attacker
+ * — a non-browser client can send any header it likes — but there is nothing
+ * here worth stealing: the server holds no accounts, no payment details and no
+ * personal data, and a forged connection can do no more than play a game.
+ *
+ * ADD YOUR OWN ORIGINS HERE if you ever move the site.
+ */
+const ALLOWED_ORIGINS = [
+  'https://arunkumarkundra.github.io',
+  'http://localhost:8080',
+  'http://127.0.0.1:8080',
+];
+
+/** A frame larger than this is not a bid; it is someone probing. */
+const MAX_FRAME_BYTES = 4096;
+
+/** Per socket. Generous for real play — a busy round is a handful of frames. */
+const RATE_WINDOW_MS = 10000;
+const RATE_MAX_FRAMES = 240;
 
 /** Bursts of host events (stage, lock, resolve) collapse into one push. */
 const PUSH_COALESCE_MS = 80;
@@ -81,7 +109,11 @@ export default {
     }
 
     if (url.pathname === '/ws') {
-      const code = (url.searchParams.get('code') || '').toUpperCase();
+      const origin = request.headers.get('Origin');
+      if (!origin || !ALLOWED_ORIGINS.includes(origin)) {
+        return new Response('This game server only serves its own site.', { status: 403 });
+      }
+      const code = normaliseCode(url.searchParams.get('code'));
       if (!CODE_RE.test(code)) {
         return new Response('Malformed game code.', { status: 400 });
       }
@@ -147,7 +179,7 @@ export class GameRoom {
 
   async fetch(request) {
     const url = new URL(request.url);
-    this.code = (url.searchParams.get('code') || '').toUpperCase();
+    this.code = normaliseCode(url.searchParams.get('code'));
 
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
@@ -157,22 +189,58 @@ export class GameRoom {
     // before then — that is what stops a bare connection from claiming a seat,
     // which in the WebRTC build produced a phantom extra player.
     let clientId = null;
+    let windowStart = Date.now();
+    let framesThisWindow = 0;
 
     server.addEventListener('message', (event) => {
+      const data = typeof event.data === 'string' ? event.data : '';
+
+      // A frame this large is not a bid. Drop the connection rather than
+      // spend time parsing it.
+      if (data.length > MAX_FRAME_BYTES) {
+        try {
+          server.close(1009, 'Frame too large.');
+        } catch {
+          /* already closing */
+        }
+        return;
+      }
+
+      // Rate limit per socket. Real play is a handful of frames per round, so
+      // anything near this ceiling is a script rather than a player.
+      const now = Date.now();
+      if (now - windowStart > RATE_WINDOW_MS) {
+        windowStart = now;
+        framesThisWindow = 0;
+      }
+      if (++framesThisWindow > RATE_MAX_FRAMES) {
+        try {
+          server.close(1008, 'Too many messages.');
+        } catch {
+          /* already closing */
+        }
+        return;
+      }
+
       let msg;
       try {
-        msg = JSON.parse(typeof event.data === 'string' ? event.data : '');
+        msg = JSON.parse(data);
       } catch {
         return; // unparseable frames are simply ignored
       }
       if (!msg || typeof msg.t !== 'string') return;
 
       if (msg.t === 'hello') {
-        clientId = typeof msg.id === 'string' && msg.id.length <= 64 ? msg.id : null;
-        if (!clientId) {
+        // One identity per socket, fixed at the first hello. Without this a
+        // single connection could introduce itself repeatedly under different
+        // ids and quietly occupy every seat at the table.
+        if (clientId) return;
+        const id = typeof msg.id === 'string' && /^[\w-]{4,64}$/.test(msg.id) ? msg.id : null;
+        if (!id) {
           send(server, { t: 'error', message: 'A player id is required.' });
           return;
         }
+        clientId = id;
         this.onHello(clientId, server);
         return;
       }
@@ -268,6 +336,12 @@ export class GameRoom {
     const seat = this.nextFreeSeat();
     if (seat === null) {
       send(ws, { t: 'error', message: 'This game is full.' });
+      // Nothing further can happen on this connection, so do not hold it open.
+      try {
+        ws.close(1000, 'Game full.');
+      } catch {
+        /* already closing */
+      }
       return;
     }
 
