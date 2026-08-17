@@ -12,7 +12,13 @@ const SOUND_STORAGE_KEY = 'qt-muted';
 const audio = {
   ctx: null,
   master: null,
-  muted: false,
+  /**
+   * Muted by default. Browsers forbid sound before a gesture, so music can
+   * never begin at load; starting it abruptly on whatever the player happens to
+   * touch first reads as a glitch. Silence that the speaker button visibly
+   * offers to end reads as a choice. The stored preference overrides this.
+   */
+  muted: true,
   ready: false,
   kicked: false,
   themeBus: null,
