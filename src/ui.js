@@ -1574,7 +1574,15 @@ function boot() {
 
 /** Share a ready-made invitation rather than a bare URL. */
 async function inviteOthers(code) {
-  const text = `Join my game of Queen's Tug — four hidden castles, one wandering queen. Tap to take a seat:`;
+  /**
+   * The code is written into the message as well as into the link. Link
+   * previews fail for all sorts of reasons outside our control — a stripped
+   * URL, a chat app that does not unfurl, a forwarded screenshot — and when
+   * they do, a visible code still lets somebody in through "Join with a code".
+   */
+  const text =
+    `Join my game of Queen's Tug — four hidden castles, one wandering queen.\n` +
+    `Tap to take a seat, or enter code ${code}:`;
   const url = inviteUrl(code);
   try {
     if (navigator.share) {
