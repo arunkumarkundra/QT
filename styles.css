@@ -851,13 +851,36 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--gold-l
   align-items: center;
 }
 .room-seats .seat-chip { flex: 0 0 auto; }
+/* Hold the row's height whatever the seats currently contain, so swapping a
+   bot for a person never nudges the layout. */
+.room-seats { min-height: 52px; }
+@media (max-height: 760px) { .room-seats { min-height: 46px; } }
 
+/**
+ * Reserved space, not measured space.
+ *
+ * Lobby messages run from four words to a full sentence, and on a phone the
+ * same sentence wraps to three lines where it takes one on a laptop. Letting
+ * this box size itself meant the code, the buttons and the humans-only
+ * checkbox all jumped up and down every time the lobby changed — worst of all
+ * at the moment a player joins, which should feel like an arrival rather than
+ * a lurch. The height is now fixed and the text is centred inside it, so
+ * nothing below ever moves.
+ */
 .room-status {
   margin: 0;
   font-size: 13.5px;
   color: var(--silver-dim);
-  min-height: 20px;
   line-height: 1.4;
+  min-height: calc(1.4em * 2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+/* Narrow phones wrap the longer notices onto a third line. */
+@media (max-width: 430px) {
+  .room-status { min-height: calc(1.4em * 3); }
 }
 .room-status.error { color: #ffb0b2; }
 .room-status.waiting { color: var(--gold-lt); }
@@ -914,6 +937,15 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--gold-l
   opacity: .7;
 }
 .seat-chip.open-seat .avatar { opacity: .55; }
+
+/* We have not heard from the server yet, so this seat's occupant is unknown.
+   It must not read as a person or as a bot — both would be a guess. */
+.seat-chip.unknown {
+  border-style: dotted;
+  background: transparent;
+  opacity: .4;
+}
+.seat-chip.unknown .avatar { opacity: .4; }
 
 /* The replay queen sits on a dark plinth so the bright trail cannot wash her
    out into a ghost. */
