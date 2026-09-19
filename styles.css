@@ -352,7 +352,7 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--gold-l
 /* Carved stone frame with a struck-gold inlay, as on the key art. */
 .board-plate {
   position: relative;
-  width: min(100%, calc(100vh - 310px));
+  width: min(100%, calc(100vh - 330px));
   aspect-ratio: 1;
   max-height: 100%;
   padding: 13px;
@@ -719,92 +719,152 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--gold-l
   opacity: .55;
 }
 
-/* --- the tug-of-war readout --- */
+/* --- the round, read back as a compass --- */
 
 .tug {
   flex: none;
   width: 100%;
   display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding: 5px 8px;
+  align-items: center;
+  gap: 14px;
+  /* Locked height: the compass sets it, so the board above can never shift
+     between a quiet round and a busy one. */
+  min-height: 81px;
+  padding: 7px 12px;
   border-radius: var(--r-md);
   background: rgba(13, 17, 25, .72);
   border: 1px solid var(--line-soft);
   animation: verdict-in .3s ease both;
 }
-.tug-verdict {
-  text-align: center;
-  font-size: 13px;
-  color: var(--silver-dim);
-  line-height: 1.35;
-}
-.tug-verdict b { color: var(--gold-lt); font-weight: 600; }
 
-.rope {
+/**
+ * Three by three, so the arms land where the four stakeable cells land on the
+ * board above. Fixed sizes: the readout must never change height between
+ * rounds or the board jumps under the player's finger.
+ */
+.tug-compass {
+  --arm-w: 50px;
+  --arm-h: 21px;
+  flex: none;
   display: grid;
-  grid-template-columns: minmax(58px, auto) 1fr minmax(58px, auto) 52px;
-  align-items: center;
-  gap: 7px;
+  grid-template-columns: repeat(3, var(--arm-w));
+  grid-template-rows: repeat(3, var(--arm-h));
+  gap: 2px;
 }
-.rope .end {
+.arm-up { grid-area: 1 / 2; }
+.arm-left { grid-area: 2 / 1; }
+.tug-hub { grid-area: 2 / 2; }
+.arm-right { grid-area: 2 / 3; }
+.arm-down { grid-area: 3 / 2; }
+
+.tug-hub {
+  display: grid;
+  place-items: center;
+  color: var(--gold-dk);
+}
+.tug-hub svg { width: 17px; height: auto; opacity: .75; }
+
+.arm {
+  position: relative;
+  display: grid;
+  place-items: center;
+  border-radius: 3px;
+  border: 1px solid color-mix(in srgb, var(--dir) 34%, transparent);
+  overflow: hidden;
+  transition: opacity .25s;
+}
+/* Length is the coins pulled that way, growing outward from the hub. */
+.arm-fill {
+  position: absolute;
+  background: color-mix(in srgb, var(--dir) 42%, transparent);
+  transition: height .45s cubic-bezier(.22, 1, .36, 1), width .45s cubic-bezier(.22, 1, .36, 1);
+}
+.arm-up .arm-fill { left: 0; right: 0; bottom: 0; height: var(--fill); }
+.arm-down .arm-fill { left: 0; right: 0; top: 0; height: var(--fill); }
+.arm-left .arm-fill { top: 0; bottom: 0; right: 0; width: var(--fill); }
+.arm-right .arm-fill { top: 0; bottom: 0; left: 0; width: var(--fill); }
+
+.arm-text {
+  position: relative;
   display: flex;
   align-items: baseline;
   gap: 3px;
   font-size: 12px;
-  color: var(--muted);
-  white-space: nowrap;
+  color: var(--silver);
 }
-.rope .end-b { justify-content: flex-end; }
-.rope .end i { font-style: normal; color: var(--dir); font-size: 13px; }
-.rope .end b { font-size: 13px; color: var(--silver-dim); }
-.rope .end em { font-style: normal; font-size: 10.5px; color: var(--gold); }
-.rope .end.won b { color: var(--silver); }
+.arm-text i { font-style: normal; color: var(--dir); font-size: 12px; }
+.arm-text b { font-size: 12.5px; }
 
-/**
- * The rope itself. The knot sits where the two sides balance, so its distance
- * from the centre IS the surviving force. Nothing here is computed in CSS that
- * the engine did not already decide.
- */
-.rope-bar {
-  position: relative;
-  height: 7px;
-  border-radius: 999px;
-  overflow: hidden;
-  background: linear-gradient(
-    to right,
-    color-mix(in srgb, var(--a) 60%, transparent) 0 var(--share),
-    color-mix(in srgb, var(--b) 60%, transparent) var(--share) 100%
-  );
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .45);
-}
-.rope-bar .knot {
+/* Your own share of that pull, as a gold rule along the bottom edge. */
+.arm-you {
   position: absolute;
-  top: -2px; bottom: -2px;
-  left: var(--share);
-  width: 3px;
-  margin-left: -1.5px;
-  border-radius: 2px;
-  background: var(--gold-lt);
-  box-shadow: 0 0 5px rgba(247, 221, 160, .85);
-  transition: left .5s cubic-bezier(.22, 1, .36, 1);
+  left: 0; bottom: 0;
+  height: 2px;
+  width: var(--you);
+  background: var(--gold);
+  opacity: 0;
 }
-/* The centre mark: where the rope would sit if the two sides were equal. */
-.rope-bar::after {
+.arm.mine .arm-you { opacity: .95; }
+
+/* The one pull that actually moved her. */
+.arm.won {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 1px rgba(217, 164, 65, .35), 0 0 9px rgba(217, 164, 65, .3);
+}
+.arm.won .arm-text { color: var(--gold-lt); }
+.arm.won .arm-text b { font-weight: 700; }
+
+/* Equal survivors. Neither is a winner and neither is a loser. */
+.arm.tied {
+  border-color: color-mix(in srgb, var(--dir) 70%, transparent);
+  border-style: dashed;
+}
+.arm.tied .arm-text { color: var(--silver-dim); }
+
+/* Survived the cancellation but was not the strongest, so it was thrown away. */
+.arm.discarded { opacity: .6; }
+.arm.discarded .arm-text::after {
   content: '';
   position: absolute;
-  left: 50%; top: 0; bottom: 0;
-  width: 1px;
-  background: rgba(219, 227, 239, .3);
+  left: -3px; right: -3px; top: 50%;
+  border-top: 1px solid var(--muted);
+  transform: rotate(-11deg);
 }
-.rope .survives {
-  text-align: right;
-  font-family: var(--mono);
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--gold);
-  white-space: nowrap;
+/* Wiped out by the opposite pull. */
+.arm.cancelled { opacity: .45; border-style: dashed; }
+.arm.idle { opacity: .25; }
+
+/* --- the sentence beside it --- */
+
+.tug-say {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
 }
+.tug-headline {
+  font-family: var(--display);
+  font-size: 14px;
+  letter-spacing: .03em;
+  color: var(--silver);
+}
+.tug-headline b { color: var(--gold-lt); font-weight: 700; }
+.tug-math {
+  font-size: 11.5px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+.tug-math b { color: var(--silver-dim); font-weight: 600; }
+.tug-math .yours { color: var(--gold); }
+.tug-math .dot { padding: 0 6px; opacity: .55; }
+.tug-moment {
+  font-size: 11.5px;
+  color: #ffb0b2;
+  line-height: 1.4;
+}
+.tug-moment b { color: #fff; font-weight: 700; }
 
 /* Near miss: the queen crossed this castle without stopping on it. */
 .castle-mark.near-miss svg { animation: near-miss 1.1s ease-out 2; }
@@ -979,12 +1039,14 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--gold-l
   .brand { font-size: 11px; letter-spacing: .16em; }
   .btn { padding: 12px 18px; }
   .status { font-size: 13.5px; min-height: 30px; }
-  .tug { padding: 4px 6px; gap: 2px; }
-  .tug-verdict { font-size: 12px; }
-  .rope { grid-template-columns: minmax(50px, auto) 1fr minmax(50px, auto) 44px; gap: 5px; }
-  .rope .end, .rope .end b, .rope .end i { font-size: 11.5px; }
-  .rope .end em { font-size: 9.5px; }
-  .rope .survives { font-size: 10px; }
+  .tug { padding: 6px 8px; gap: 10px; min-height: 73px; }
+  .tug-compass { --arm-w: 44px; --arm-h: 19px; }
+  .tug-hub svg { width: 15px; }
+  .arm-text, .arm-text i { font-size: 11px; }
+  .arm-text b { font-size: 11.5px; }
+  .tug-headline { font-size: 12.5px; }
+  .tug-math, .tug-moment { font-size: 10.5px; }
+  .tug-math .dot { padding: 0 4px; }
   .result-stats { gap: 13px; font-size: 12px; }
 }
 
