@@ -403,7 +403,7 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--gold-l
 /* Carved stone frame with a struck-gold inlay, as on the key art. */
 .board-plate {
   position: relative;
-  width: min(100%, calc(100vh - 310px));
+  width: min(100%, calc(100vh - 330px));
   aspect-ratio: 1;
   max-height: 100%;
   padding: 13px;
@@ -770,92 +770,152 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--gold-l
   opacity: .55;
 }
 
-/* --- the tug-of-war readout --- */
+/* --- the round, read back as a compass --- */
 
 .tug {
   flex: none;
   width: 100%;
   display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding: 5px 8px;
+  align-items: center;
+  gap: 14px;
+  /* Locked height: the compass sets it, so the board above can never shift
+     between a quiet round and a busy one. */
+  min-height: 81px;
+  padding: 7px 12px;
   border-radius: var(--r-md);
   background: rgba(13, 17, 25, .72);
   border: 1px solid var(--line-soft);
   animation: verdict-in .3s ease both;
 }
-.tug-verdict {
-  text-align: center;
-  font-size: 13px;
-  color: var(--silver-dim);
-  line-height: 1.35;
-}
-.tug-verdict b { color: var(--gold-lt); font-weight: 600; }
 
-.rope {
+/**
+ * Three by three, so the arms land where the four stakeable cells land on the
+ * board above. Fixed sizes: the readout must never change height between
+ * rounds or the board jumps under the player's finger.
+ */
+.tug-compass {
+  --arm-w: 50px;
+  --arm-h: 21px;
+  flex: none;
   display: grid;
-  grid-template-columns: minmax(58px, auto) 1fr minmax(58px, auto) 52px;
-  align-items: center;
-  gap: 7px;
+  grid-template-columns: repeat(3, var(--arm-w));
+  grid-template-rows: repeat(3, var(--arm-h));
+  gap: 2px;
 }
-.rope .end {
+.arm-up { grid-area: 1 / 2; }
+.arm-left { grid-area: 2 / 1; }
+.tug-hub { grid-area: 2 / 2; }
+.arm-right { grid-area: 2 / 3; }
+.arm-down { grid-area: 3 / 2; }
+
+.tug-hub {
+  display: grid;
+  place-items: center;
+  color: var(--gold-dk);
+}
+.tug-hub svg { width: 17px; height: auto; opacity: .75; }
+
+.arm {
+  position: relative;
+  display: grid;
+  place-items: center;
+  border-radius: 3px;
+  border: 1px solid color-mix(in srgb, var(--dir) 34%, transparent);
+  overflow: hidden;
+  transition: opacity .25s;
+}
+/* Length is the coins pulled that way, growing outward from the hub. */
+.arm-fill {
+  position: absolute;
+  background: color-mix(in srgb, var(--dir) 42%, transparent);
+  transition: height .45s cubic-bezier(.22, 1, .36, 1), width .45s cubic-bezier(.22, 1, .36, 1);
+}
+.arm-up .arm-fill { left: 0; right: 0; bottom: 0; height: var(--fill); }
+.arm-down .arm-fill { left: 0; right: 0; top: 0; height: var(--fill); }
+.arm-left .arm-fill { top: 0; bottom: 0; right: 0; width: var(--fill); }
+.arm-right .arm-fill { top: 0; bottom: 0; left: 0; width: var(--fill); }
+
+.arm-text {
+  position: relative;
   display: flex;
   align-items: baseline;
   gap: 3px;
   font-size: 12px;
-  color: var(--muted);
-  white-space: nowrap;
+  color: var(--silver);
 }
-.rope .end-b { justify-content: flex-end; }
-.rope .end i { font-style: normal; color: var(--dir); font-size: 13px; }
-.rope .end b { font-size: 13px; color: var(--silver-dim); }
-.rope .end em { font-style: normal; font-size: 10.5px; color: var(--gold); }
-.rope .end.won b { color: var(--silver); }
+.arm-text i { font-style: normal; color: var(--dir); font-size: 12px; }
+.arm-text b { font-size: 12.5px; }
 
-/**
- * The rope itself. The knot sits where the two sides balance, so its distance
- * from the centre IS the surviving force. Nothing here is computed in CSS that
- * the engine did not already decide.
- */
-.rope-bar {
-  position: relative;
-  height: 7px;
-  border-radius: 999px;
-  overflow: hidden;
-  background: linear-gradient(
-    to right,
-    color-mix(in srgb, var(--a) 60%, transparent) 0 var(--share),
-    color-mix(in srgb, var(--b) 60%, transparent) var(--share) 100%
-  );
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .45);
-}
-.rope-bar .knot {
+/* Your own share of that pull, as a gold rule along the bottom edge. */
+.arm-you {
   position: absolute;
-  top: -2px; bottom: -2px;
-  left: var(--share);
-  width: 3px;
-  margin-left: -1.5px;
-  border-radius: 2px;
-  background: var(--gold-lt);
-  box-shadow: 0 0 5px rgba(247, 221, 160, .85);
-  transition: left .5s cubic-bezier(.22, 1, .36, 1);
+  left: 0; bottom: 0;
+  height: 2px;
+  width: var(--you);
+  background: var(--gold);
+  opacity: 0;
 }
-/* The centre mark: where the rope would sit if the two sides were equal. */
-.rope-bar::after {
+.arm.mine .arm-you { opacity: .95; }
+
+/* The one pull that actually moved her. */
+.arm.won {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 1px rgba(217, 164, 65, .35), 0 0 9px rgba(217, 164, 65, .3);
+}
+.arm.won .arm-text { color: var(--gold-lt); }
+.arm.won .arm-text b { font-weight: 700; }
+
+/* Equal survivors. Neither is a winner and neither is a loser. */
+.arm.tied {
+  border-color: color-mix(in srgb, var(--dir) 70%, transparent);
+  border-style: dashed;
+}
+.arm.tied .arm-text { color: var(--silver-dim); }
+
+/* Survived the cancellation but was not the strongest, so it was thrown away. */
+.arm.discarded { opacity: .6; }
+.arm.discarded .arm-text::after {
   content: '';
   position: absolute;
-  left: 50%; top: 0; bottom: 0;
-  width: 1px;
-  background: rgba(219, 227, 239, .3);
+  left: -3px; right: -3px; top: 50%;
+  border-top: 1px solid var(--muted);
+  transform: rotate(-11deg);
 }
-.rope .survives {
-  text-align: right;
-  font-family: var(--mono);
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--gold);
-  white-space: nowrap;
+/* Wiped out by the opposite pull. */
+.arm.cancelled { opacity: .45; border-style: dashed; }
+.arm.idle { opacity: .25; }
+
+/* --- the sentence beside it --- */
+
+.tug-say {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
 }
+.tug-headline {
+  font-family: var(--display);
+  font-size: 14px;
+  letter-spacing: .03em;
+  color: var(--silver);
+}
+.tug-headline b { color: var(--gold-lt); font-weight: 700; }
+.tug-math {
+  font-size: 11.5px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+.tug-math b { color: var(--silver-dim); font-weight: 600; }
+.tug-math .yours { color: var(--gold); }
+.tug-math .dot { padding: 0 6px; opacity: .55; }
+.tug-moment {
+  font-size: 11.5px;
+  color: #ffb0b2;
+  line-height: 1.4;
+}
+.tug-moment b { color: #fff; font-weight: 700; }
 
 /* Near miss: the queen crossed this castle without stopping on it. */
 .castle-mark.near-miss svg { animation: near-miss 1.1s ease-out 2; }
@@ -1030,12 +1090,14 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--gold-l
   .brand { font-size: 11px; letter-spacing: .16em; }
   .btn { padding: 12px 18px; }
   .status { font-size: 13.5px; min-height: 30px; }
-  .tug { padding: 4px 6px; gap: 2px; }
-  .tug-verdict { font-size: 12px; }
-  .rope { grid-template-columns: minmax(50px, auto) 1fr minmax(50px, auto) 44px; gap: 5px; }
-  .rope .end, .rope .end b, .rope .end i { font-size: 11.5px; }
-  .rope .end em { font-size: 9.5px; }
-  .rope .survives { font-size: 10px; }
+  .tug { padding: 6px 8px; gap: 10px; min-height: 73px; }
+  .tug-compass { --arm-w: 44px; --arm-h: 19px; }
+  .tug-hub svg { width: 15px; }
+  .arm-text, .arm-text i { font-size: 11px; }
+  .arm-text b { font-size: 11.5px; }
+  .tug-headline { font-size: 12.5px; }
+  .tug-math, .tug-moment { font-size: 10.5px; }
+  .tug-math .dot { padding: 0 4px; }
   .result-stats { gap: 13px; font-size: 12px; }
 }
 
@@ -4461,7 +4523,7 @@ const inviteUrl = (code) => `${location.origin}${location.pathname}?game=${encod
  * ------------------------------------------------------------------ */
 
 const DIR_ARROW = { UP: '↑', DOWN: '↓', LEFT: '←', RIGHT: '→' };
-/** The two tug-of-war ropes. Each is a pair that cancels against itself. */
+/** The two axes. Each is a pair of opposite pulls that cancels against itself. */
 const AXES = [
   { a: 'UP', b: 'DOWN' },
   { a: 'LEFT', b: 'RIGHT' },
@@ -4559,70 +4621,153 @@ const clearTug = () => {
 };
 
 /**
- * The tug-of-war readout. One rope per contested axis: the knot sits where the
- * two sides balance, so a glance shows who is winning and by how much. This is
- * the round's public aggregate — it never says WHO pulled, only how hard the
- * table pulled each way.
+ * The round, read back as a compass.
+ *
+ * The four arms sit exactly where the four stakeable cells sit on the board,
+ * so the readout is a picture of the thing the player just tapped rather than
+ * an abstract chart. Arm length is the coins pulled that way; the winning arm
+ * is lit, a fully-cancelled arm is struck through, and the surviving-but-
+ * weaker arm is marked discarded, which is the rule that most often costs
+ * people coins without their noticing.
+ *
+ * Everything here is `lastResolution.totals`, which §5.1 makes public and
+ * which playerView.js already sends to every seat. No hidden field is read.
  */
-function renderTug(res, myBid) {
+function renderTug(res, myBid, { nearMiss = false } = {}) {
   const tug = $('#tug');
   if (!tug) return;
+
   const totals = res.totals || {};
   const mine = myBid || {};
-  const anyCoins = DIRECTIONS.some((d) => (totals[d] || 0) > 0);
+  const surviving = res.surviving || netOf(totals).surviving;
+  const spent = DIRECTIONS.reduce((s, d) => s + (totals[d] || 0), 0);
+  const peak = Math.max(1, ...DIRECTIONS.map((d) => totals[d] || 0));
 
-  let verdict;
-  if (!anyCoins) {
-    verdict = 'Nobody spent a coin. The queen stands still.';
-  } else if (res.tie) {
-    verdict = 'The pulls cancel exactly. She holds her ground.';
-  } else if (res.blockedByBoundary) {
-    verdict =
-      `<b>${DIR_ARROW[res.direction]} ${res.requestedDistance}</b> wins, but the wall stops her after ` +
-      `<b>${res.actualDistance}</b>. ${res.requestedDistance - res.actualDistance} wasted.`;
-  } else {
+  const winner = res.tie ? null : res.direction;
+  /** Equal survivors: nobody wins, so none of them may be drawn as a loser. */
+  const tied = res.tie ? DIRECTIONS.filter((d) => (surviving[d] || 0) > 0) : [];
+  /** A surviving pull that still lost, because only the strongest one moves her. */
+  const discarded = winner
+    ? DIRECTIONS.filter((d) => d !== winner && (surviving[d] || 0) > 0).sort(
+        (a, b) => surviving[b] - surviving[a]
+      )[0]
+    : null;
+
+  /* ---- the compass ---- */
+
+  const arm = (d) => {
+    const total = totals[d] || 0;
+    const yours = mine[d] || 0;
+    const cls = ['arm', `arm-${DIR_WORD[d]}`];
+    if (d === winner) cls.push('won');
+    else if (tied.includes(d)) cls.push('tied');
+    else if (d === discarded) cls.push('discarded');
+    else if (total > 0 && (surviving[d] || 0) === 0) cls.push('cancelled');
+    if (total === 0) cls.push('idle');
+    if (yours > 0) cls.push('mine');
+
+    const title =
+      total === 0
+        ? `Nothing was pulled ${DIR_WORD[d]}`
+        : `${total} pulled ${DIR_WORD[d]}${yours ? `, ${yours} of it yours` : ''}`;
+
+    const pct = (n) => `${Math.round(n * 1000) / 10}%`;
+    return `<span class="${cls.join(' ')}" style="--dir:${dirVar(d)};--fill:${pct(total / peak)};--you:${pct(
+      total ? yours / total : 0
+    )}" title="${title}">
+        <span class="arm-fill"></span>
+        <span class="arm-text"><i>${DIR_ARROW[d]}</i><b class="num">${total}</b></span>
+        <span class="arm-you"></span>
+      </span>`;
+  };
+
+  const compass = `<div class="tug-compass" aria-hidden="true">
+      ${DIRECTIONS.map(arm).join('')}
+      <span class="tug-hub">${ART.crown}</span>
+    </div>`;
+
+  /* ---- the sentence ---- */
+
+  let headline;
+  if (spent === 0) headline = 'Nobody spent a coin.';
+  else if (res.tie) headline = 'The pulls cancel. She holds her ground.';
+  else
+    headline = `She moves <b>${res.actualDistance} ${DIR_WORD[res.direction]}</b>${
+      res.blockedByBoundary ? ' and hits the wall' : ''
+    }.`;
+
+  /**
+   * One short line of arithmetic, in the order the engine applies it: cancel
+   * the opposite pair, then throw away everything but the strongest survivor.
+   */
+  const notes = [];
+  if (spent > 0) {
     /**
-     * Only the single strongest survivor moves her; the other axis is thrown
-     * away entirely. That rule is invisible in play and costs people coins
-     * they never understand losing, so name the beaten direction out loud.
+     * Cancellation is reported for EVERY contested axis, not just the winning
+     * one. A player whose coins were cancelled on the losing axis is exactly
+     * the player who cannot work out where their money went.
      */
-    const surviving = res.surviving || netOf(totals).surviving;
-    const runnerUp = DIRECTIONS.filter((d) => d !== res.direction && (surviving[d] || 0) > 0).sort(
-      (a, b) => surviving[b] - surviving[a]
-    )[0];
-    const cells = `<b>${res.actualDistance}</b> ${res.actualDistance === 1 ? 'cell' : 'cells'}`;
-    verdict = runnerUp
-      ? `<b>${DIR_ARROW[res.direction]} ${res.requestedDistance}</b> beats ` +
-        `<b>${DIR_ARROW[runnerUp]} ${surviving[runnerUp]}</b>, so she travels ${cells}. ` +
-        `The weaker pull is discarded.`
-      : `<b>${DIR_ARROW[res.direction]} ${res.requestedDistance}</b> survives, so she travels ${cells}.`;
-  }
-
-  const ropes = AXES.filter(({ a, b }) => (totals[a] || 0) + (totals[b] || 0) > 0)
-    .map(({ a, b }) => {
+    for (const { a, b } of AXES) {
       const ta = totals[a] || 0;
       const tb = totals[b] || 0;
-      const share = (ta / (ta + tb)) * 100;
-      const winner = ta === tb ? null : ta > tb ? a : b;
-      const survives = Math.abs(ta - tb);
-      const you = (d) => ((mine[d] || 0) > 0 ? `<em>· you ${mine[d]}</em>` : '');
-      return `
-        <div class="rope">
-          <span class="end end-a ${winner === a ? 'won' : ''}" style="--dir:${dirVar(a)}">
-            <i>${DIR_ARROW[a]}</i><b class="num">${ta}</b>${you(a)}
-          </span>
-          <span class="rope-bar" style="--a:${dirVar(a)};--b:${dirVar(b)};--share:${share}%">
-            <span class="knot"></span>
-          </span>
-          <span class="end end-b ${winner === b ? 'won' : ''}" style="--dir:${dirVar(b)}">
-            ${you(b)}<b class="num">${tb}</b><i>${DIR_ARROW[b]}</i>
-          </span>
-          <span class="survives">${winner ? `${DIR_ARROW[winner]} ${survives}` : 'cancelled'}</span>
-        </div>`;
-    })
-    .join('');
+      if (ta === 0 || tb === 0) continue;
+      const survivor = surviving[a] > 0 ? a : surviving[b] > 0 ? b : null;
+      notes.push(
+        survivor
+          ? `${DIR_ARROW[a]}${ta} − ${DIR_ARROW[b]}${tb} = <b>${DIR_ARROW[survivor]}${surviving[survivor]}</b>`
+          : `${DIR_ARROW[a]}${ta} − ${DIR_ARROW[b]}${tb} = <b>nothing</b>`
+      );
+    }
 
-  tug.innerHTML = `<div class="tug-verdict">${verdict}</div>${ropes}`;
+    if (winner) {
+      if (discarded) notes.push(`${DIR_ARROW[discarded]}${surviving[discarded]} <b>discarded</b>, weaker`);
+      if (res.blockedByBoundary) notes.push(`${res.requestedDistance - res.actualDistance} lost to the wall`);
+    } else if (tied.length > 1) {
+      // Two survivors of equal strength. Neither is weaker, so neither wins.
+      notes.push(`${tied.map((d) => `${DIR_ARROW[d]}${surviving[d]}`).join(' and ')} are <b>equal</b>`);
+    }
+
+    /**
+     * Three clauses is the most that fits on one line on a phone. When a round
+     * is busy enough to need more, the cancellation the player was personally
+     * part of is the one worth keeping — the compass still shows every number.
+     */
+    if (notes.length + 1 > 3) {
+      const cancels = notes.filter((n) => n.includes('−'));
+      if (cancels.length > 1) {
+        const keep = cancels.find((n) =>
+          DIRECTIONS.some((d) => (mine[d] || 0) > 0 && n.includes(DIR_ARROW[d]))
+        );
+        for (const c of cancels) {
+          if (c !== (keep || cancels[0])) notes.splice(notes.indexOf(c), 1);
+        }
+      }
+    }
+
+    /**
+     * Where your own coins ended up. If they went on a pull that lost, saying
+     * so is the whole lesson of the round; the gold rule under that arm shows
+     * the same thing at a glance.
+     */
+    const onWinner = winner ? mine[winner] || 0 : 0;
+    if (onWinner > 0) {
+      notes.push(`<span class="yours">you pulled ${onWinner}</span>`);
+    } else {
+      const spentOn = DIRECTIONS.filter((d) => (mine[d] || 0) > 0).sort((a, b) => mine[b] - mine[a])[0];
+      if (spentOn) notes.push(`<span class="yours">your ${mine[spentOn]} went ${DIR_ARROW[spentOn]}</span>`);
+    }
+  }
+
+  const moment = nearMiss
+    ? `<div class="tug-moment">She crossed your castle without stopping — she must <b>finish</b> on it.</div>`
+    : '';
+
+  tug.innerHTML = `${compass}
+    <div class="tug-say">
+      <div class="tug-headline">${headline}</div>
+      ${notes.length ? `<div class="tug-math">${notes.join('<span class="dot">·</span>')}</div>` : ''}
+      ${moment}
+    </div>`;
   tug.hidden = false;
 }
 
@@ -5457,14 +5602,12 @@ async function playResolution() {
 
   if (!alive()) return;
 
-  // The round is now legible: what was pulled, what cancelled, what survived.
-  renderTug(res, myBid);
-
   /**
    * Walking over a castle is not the same as finishing on one, and that is the
-   * single rule players most often discover by losing to it. Say it out loud
-   * the first time it happens to them. Only this seat's own castle is checked,
-   * so nothing about anybody else's board is revealed.
+   * rule people most often lose to without noticing. It is said once, inside
+   * the readout the player is already reading, rather than as a toast that
+   * covers the board. Only this seat's own castle is checked, so nothing about
+   * anybody else's board is revealed.
    */
   const castle = view.you.castlePosition;
   const passedOver =
@@ -5478,10 +5621,10 @@ async function playResolution() {
       void mark.offsetWidth;
       mark.classList.add('near-miss');
     }
-    sound.play('deny');
-    toast('She walked straight over your castle. She has to FINISH on it.', 'bad');
-    await wait(500);
   }
+
+  // The round is now legible: what was pulled, what cancelled, what survived.
+  renderTug(res, myBid, { nearMiss: passedOver });
 
   if (view.lastResolution?.yourBonusCollected) {
     const claimed = $('.bonus-mark', $('#board-overlay'));
