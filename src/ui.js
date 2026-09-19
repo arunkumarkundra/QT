@@ -257,7 +257,7 @@ const inviteUrl = (code) => `${location.origin}${location.pathname}?game=${encod
  * ------------------------------------------------------------------ */
 
 const DIR_ARROW = { UP: '↑', DOWN: '↓', LEFT: '←', RIGHT: '→' };
-/** The two tug-of-war ropes. Each is a pair that cancels against itself. */
+/** The two axes. Each is a pair of opposite pulls that cancels against itself. */
 const AXES = [
   { a: 'UP', b: 'DOWN' },
   { a: 'LEFT', b: 'RIGHT' },
@@ -355,70 +355,153 @@ const clearTug = () => {
 };
 
 /**
- * The tug-of-war readout. One rope per contested axis: the knot sits where the
- * two sides balance, so a glance shows who is winning and by how much. This is
- * the round's public aggregate — it never says WHO pulled, only how hard the
- * table pulled each way.
+ * The round, read back as a compass.
+ *
+ * The four arms sit exactly where the four stakeable cells sit on the board,
+ * so the readout is a picture of the thing the player just tapped rather than
+ * an abstract chart. Arm length is the coins pulled that way; the winning arm
+ * is lit, a fully-cancelled arm is struck through, and the surviving-but-
+ * weaker arm is marked discarded, which is the rule that most often costs
+ * people coins without their noticing.
+ *
+ * Everything here is `lastResolution.totals`, which §5.1 makes public and
+ * which playerView.js already sends to every seat. No hidden field is read.
  */
-function renderTug(res, myBid) {
+function renderTug(res, myBid, { nearMiss = false } = {}) {
   const tug = $('#tug');
   if (!tug) return;
+
   const totals = res.totals || {};
   const mine = myBid || {};
-  const anyCoins = DIRECTIONS.some((d) => (totals[d] || 0) > 0);
+  const surviving = res.surviving || netOf(totals).surviving;
+  const spent = DIRECTIONS.reduce((s, d) => s + (totals[d] || 0), 0);
+  const peak = Math.max(1, ...DIRECTIONS.map((d) => totals[d] || 0));
 
-  let verdict;
-  if (!anyCoins) {
-    verdict = 'Nobody spent a coin. The queen stands still.';
-  } else if (res.tie) {
-    verdict = 'The pulls cancel exactly. She holds her ground.';
-  } else if (res.blockedByBoundary) {
-    verdict =
-      `<b>${DIR_ARROW[res.direction]} ${res.requestedDistance}</b> wins, but the wall stops her after ` +
-      `<b>${res.actualDistance}</b>. ${res.requestedDistance - res.actualDistance} wasted.`;
-  } else {
+  const winner = res.tie ? null : res.direction;
+  /** Equal survivors: nobody wins, so none of them may be drawn as a loser. */
+  const tied = res.tie ? DIRECTIONS.filter((d) => (surviving[d] || 0) > 0) : [];
+  /** A surviving pull that still lost, because only the strongest one moves her. */
+  const discarded = winner
+    ? DIRECTIONS.filter((d) => d !== winner && (surviving[d] || 0) > 0).sort(
+        (a, b) => surviving[b] - surviving[a]
+      )[0]
+    : null;
+
+  /* ---- the compass ---- */
+
+  const arm = (d) => {
+    const total = totals[d] || 0;
+    const yours = mine[d] || 0;
+    const cls = ['arm', `arm-${DIR_WORD[d]}`];
+    if (d === winner) cls.push('won');
+    else if (tied.includes(d)) cls.push('tied');
+    else if (d === discarded) cls.push('discarded');
+    else if (total > 0 && (surviving[d] || 0) === 0) cls.push('cancelled');
+    if (total === 0) cls.push('idle');
+    if (yours > 0) cls.push('mine');
+
+    const title =
+      total === 0
+        ? `Nothing was pulled ${DIR_WORD[d]}`
+        : `${total} pulled ${DIR_WORD[d]}${yours ? `, ${yours} of it yours` : ''}`;
+
+    const pct = (n) => `${Math.round(n * 1000) / 10}%`;
+    return `<span class="${cls.join(' ')}" style="--dir:${dirVar(d)};--fill:${pct(total / peak)};--you:${pct(
+      total ? yours / total : 0
+    )}" title="${title}">
+        <span class="arm-fill"></span>
+        <span class="arm-text"><i>${DIR_ARROW[d]}</i><b class="num">${total}</b></span>
+        <span class="arm-you"></span>
+      </span>`;
+  };
+
+  const compass = `<div class="tug-compass" aria-hidden="true">
+      ${DIRECTIONS.map(arm).join('')}
+      <span class="tug-hub">${ART.crown}</span>
+    </div>`;
+
+  /* ---- the sentence ---- */
+
+  let headline;
+  if (spent === 0) headline = 'Nobody spent a coin.';
+  else if (res.tie) headline = 'The pulls cancel. She holds her ground.';
+  else
+    headline = `She moves <b>${res.actualDistance} ${DIR_WORD[res.direction]}</b>${
+      res.blockedByBoundary ? ' and hits the wall' : ''
+    }.`;
+
+  /**
+   * One short line of arithmetic, in the order the engine applies it: cancel
+   * the opposite pair, then throw away everything but the strongest survivor.
+   */
+  const notes = [];
+  if (spent > 0) {
     /**
-     * Only the single strongest survivor moves her; the other axis is thrown
-     * away entirely. That rule is invisible in play and costs people coins
-     * they never understand losing, so name the beaten direction out loud.
+     * Cancellation is reported for EVERY contested axis, not just the winning
+     * one. A player whose coins were cancelled on the losing axis is exactly
+     * the player who cannot work out where their money went.
      */
-    const surviving = res.surviving || netOf(totals).surviving;
-    const runnerUp = DIRECTIONS.filter((d) => d !== res.direction && (surviving[d] || 0) > 0).sort(
-      (a, b) => surviving[b] - surviving[a]
-    )[0];
-    const cells = `<b>${res.actualDistance}</b> ${res.actualDistance === 1 ? 'cell' : 'cells'}`;
-    verdict = runnerUp
-      ? `<b>${DIR_ARROW[res.direction]} ${res.requestedDistance}</b> beats ` +
-        `<b>${DIR_ARROW[runnerUp]} ${surviving[runnerUp]}</b>, so she travels ${cells}. ` +
-        `The weaker pull is discarded.`
-      : `<b>${DIR_ARROW[res.direction]} ${res.requestedDistance}</b> survives, so she travels ${cells}.`;
-  }
-
-  const ropes = AXES.filter(({ a, b }) => (totals[a] || 0) + (totals[b] || 0) > 0)
-    .map(({ a, b }) => {
+    for (const { a, b } of AXES) {
       const ta = totals[a] || 0;
       const tb = totals[b] || 0;
-      const share = (ta / (ta + tb)) * 100;
-      const winner = ta === tb ? null : ta > tb ? a : b;
-      const survives = Math.abs(ta - tb);
-      const you = (d) => ((mine[d] || 0) > 0 ? `<em>· you ${mine[d]}</em>` : '');
-      return `
-        <div class="rope">
-          <span class="end end-a ${winner === a ? 'won' : ''}" style="--dir:${dirVar(a)}">
-            <i>${DIR_ARROW[a]}</i><b class="num">${ta}</b>${you(a)}
-          </span>
-          <span class="rope-bar" style="--a:${dirVar(a)};--b:${dirVar(b)};--share:${share}%">
-            <span class="knot"></span>
-          </span>
-          <span class="end end-b ${winner === b ? 'won' : ''}" style="--dir:${dirVar(b)}">
-            ${you(b)}<b class="num">${tb}</b><i>${DIR_ARROW[b]}</i>
-          </span>
-          <span class="survives">${winner ? `${DIR_ARROW[winner]} ${survives}` : 'cancelled'}</span>
-        </div>`;
-    })
-    .join('');
+      if (ta === 0 || tb === 0) continue;
+      const survivor = surviving[a] > 0 ? a : surviving[b] > 0 ? b : null;
+      notes.push(
+        survivor
+          ? `${DIR_ARROW[a]}${ta} − ${DIR_ARROW[b]}${tb} = <b>${DIR_ARROW[survivor]}${surviving[survivor]}</b>`
+          : `${DIR_ARROW[a]}${ta} − ${DIR_ARROW[b]}${tb} = <b>nothing</b>`
+      );
+    }
 
-  tug.innerHTML = `<div class="tug-verdict">${verdict}</div>${ropes}`;
+    if (winner) {
+      if (discarded) notes.push(`${DIR_ARROW[discarded]}${surviving[discarded]} <b>discarded</b>, weaker`);
+      if (res.blockedByBoundary) notes.push(`${res.requestedDistance - res.actualDistance} lost to the wall`);
+    } else if (tied.length > 1) {
+      // Two survivors of equal strength. Neither is weaker, so neither wins.
+      notes.push(`${tied.map((d) => `${DIR_ARROW[d]}${surviving[d]}`).join(' and ')} are <b>equal</b>`);
+    }
+
+    /**
+     * Three clauses is the most that fits on one line on a phone. When a round
+     * is busy enough to need more, the cancellation the player was personally
+     * part of is the one worth keeping — the compass still shows every number.
+     */
+    if (notes.length + 1 > 3) {
+      const cancels = notes.filter((n) => n.includes('−'));
+      if (cancels.length > 1) {
+        const keep = cancels.find((n) =>
+          DIRECTIONS.some((d) => (mine[d] || 0) > 0 && n.includes(DIR_ARROW[d]))
+        );
+        for (const c of cancels) {
+          if (c !== (keep || cancels[0])) notes.splice(notes.indexOf(c), 1);
+        }
+      }
+    }
+
+    /**
+     * Where your own coins ended up. If they went on a pull that lost, saying
+     * so is the whole lesson of the round; the gold rule under that arm shows
+     * the same thing at a glance.
+     */
+    const onWinner = winner ? mine[winner] || 0 : 0;
+    if (onWinner > 0) {
+      notes.push(`<span class="yours">you pulled ${onWinner}</span>`);
+    } else {
+      const spentOn = DIRECTIONS.filter((d) => (mine[d] || 0) > 0).sort((a, b) => mine[b] - mine[a])[0];
+      if (spentOn) notes.push(`<span class="yours">your ${mine[spentOn]} went ${DIR_ARROW[spentOn]}</span>`);
+    }
+  }
+
+  const moment = nearMiss
+    ? `<div class="tug-moment">She crossed your castle without stopping — she must <b>finish</b> on it.</div>`
+    : '';
+
+  tug.innerHTML = `${compass}
+    <div class="tug-say">
+      <div class="tug-headline">${headline}</div>
+      ${notes.length ? `<div class="tug-math">${notes.join('<span class="dot">·</span>')}</div>` : ''}
+      ${moment}
+    </div>`;
   tug.hidden = false;
 }
 
@@ -1253,14 +1336,12 @@ async function playResolution() {
 
   if (!alive()) return;
 
-  // The round is now legible: what was pulled, what cancelled, what survived.
-  renderTug(res, myBid);
-
   /**
    * Walking over a castle is not the same as finishing on one, and that is the
-   * single rule players most often discover by losing to it. Say it out loud
-   * the first time it happens to them. Only this seat's own castle is checked,
-   * so nothing about anybody else's board is revealed.
+   * rule people most often lose to without noticing. It is said once, inside
+   * the readout the player is already reading, rather than as a toast that
+   * covers the board. Only this seat's own castle is checked, so nothing about
+   * anybody else's board is revealed.
    */
   const castle = view.you.castlePosition;
   const passedOver =
@@ -1274,10 +1355,10 @@ async function playResolution() {
       void mark.offsetWidth;
       mark.classList.add('near-miss');
     }
-    sound.play('deny');
-    toast('She walked straight over your castle. She has to FINISH on it.', 'bad');
-    await wait(500);
   }
+
+  // The round is now legible: what was pulled, what cancelled, what survived.
+  renderTug(res, myBid, { nearMiss: passedOver });
 
   if (view.lastResolution?.yourBonusCollected) {
     const claimed = $('.bonus-mark', $('#board-overlay'));
