@@ -777,6 +777,7 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--gold-l
   width: 100%;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 14px;
   /* Locked height: the compass sets it, so the board above can never shift
      between a quiet round and a busy one. */
@@ -888,12 +889,32 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--gold-l
 /* --- the sentence beside it --- */
 
 .tug-say {
-  flex: 1;
+  /**
+   * A fixed basis, not `flex: 1`. The group is centred in the panel, and a
+   * text column that sized itself to its content would drag the compass
+   * sideways on every round as the wording changed. It shrinks below this on
+   * a narrow screen, where the panel is full anyway.
+   */
+  flex: 0 1 460px;
   min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 2px;
   text-align: left;
+}
+/**
+ * Says which round this is about. Inline with the headline rather than on its
+ * own line, so naming it costs no height and the panel never grows.
+ */
+.tug-say .eyebrow {
+  margin-right: 8px;
+  font-family: var(--ui);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--gold-dk);
+  white-space: nowrap;
 }
 .tug-headline {
   font-family: var(--display);
@@ -1091,6 +1112,8 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--gold-l
   .btn { padding: 12px 18px; }
   .status { font-size: 13.5px; min-height: 30px; }
   .tug { padding: 6px 8px; gap: 10px; min-height: 73px; }
+  .tug-say { flex: 1 1 auto; }
+  .tug-say .eyebrow { margin-right: 6px; font-size: 9px; letter-spacing: .1em; }
   .tug-compass { --arm-w: 44px; --arm-h: 19px; }
   .tug-hub svg { width: 15px; }
   .arm-text, .arm-text i { font-size: 11px; }
@@ -4764,7 +4787,7 @@ function renderTug(res, myBid, { nearMiss = false } = {}) {
 
   tug.innerHTML = `${compass}
     <div class="tug-say">
-      <div class="tug-headline">${headline}</div>
+      <div class="tug-headline"><span class="eyebrow">Last move</span>${headline}</div>
       ${notes.length ? `<div class="tug-math">${notes.join('<span class="dot">·</span>')}</div>` : ''}
       ${moment}
     </div>`;
@@ -5018,6 +5041,36 @@ async function enterRoom(code) {
       // The server answered, so the solo fallback is no longer needed.
       clearTimeout(app.joinTimer);
       app.joinTimer = null;
+
+      /**
+       * A lobby message while a game is running means the server no longer
+       * holds that game — it was redeployed, or the room was torn down after
+       * the last player left. The socket will reconnect happily into an empty
+       * room and then wait forever for a state that is never coming, so say
+       * what happened instead of leaving the player on "Reconnecting…".
+       */
+      if (app.started) {
+        if (!lobby.started && !lobby.inProgress) {
+          setTimeout(() => {
+            toast('The game server restarted. That game could not be recovered.', 'bad');
+            leaveToTitle();
+          }, 0);
+        }
+        return;
+      }
+
+      /**
+       * The server answered late, after we had already offered solo play.
+       * Falling back was a stopgap, not a decision — take the online table
+       * back now that there is one.
+       */
+      if (!app.online) {
+        app.online = true;
+        app.host?.dispose?.();
+        app.host = null;
+        app.game = remote;
+      }
+
       app.lobby = lobby;
       app.humansOnly = !!lobby.humansOnly;
       app.isHost = !!lobby.admin;
@@ -5065,9 +5118,13 @@ async function enterRoom(code) {
   clearTimeout(app.joinTimer);
   app.joinTimer = setTimeout(() => {
     if (app.lobby || !app.online) return;
-    remote.dispose?.();
-    if (app.game === remote) app.game = null;
-    goOffline('Could not reach the game server. You can still play against the court’s bots.');
+    /**
+     * Offer solo play, but do NOT hang up: net.js keeps retrying in the
+     * background, and if the server comes back before the player presses
+     * Start, `onLobby` above quietly restores the online table. A slow
+     * server should cost a first-time player a few seconds, not their game.
+     */
+    goOffline('Still reaching the game server. Start now to play the court’s bots, or wait a moment.');
   }, LOBBY_TIMEOUT_MS);
 
   /**
