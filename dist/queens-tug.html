@@ -7,7 +7,44 @@
 <meta name="description" content="Four hidden castles. One wandering queen. Bid in secret to tug her onto your castle.">
 <meta name="theme-color" content="#070a0f">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230d1119'/%3E%3Cpath d='M12 22 8 8l13 8 11-13 11 13 13-8-4 14a7 7 0 0 1-2 4l-2 8H16l-2-8a7 7 0 0 1-2-4z' fill='%23f2d492' stroke='%235c4416' stroke-width='2' stroke-linejoin='round'/%3E%3Crect x='17' y='40' width='30' height='5' rx='2' fill='%23f2d492' stroke='%235c4416' stroke-width='2'/%3E%3Cpath d='M20 47h24l3 9H17z' fill='%23f2d492' stroke='%235c4416' stroke-width='2' stroke-linejoin='round'/%3E%3C/svg%3E">
-<link rel="apple-touch-icon" href="./assets/logo.png">
+<link rel="apple-touch-icon" href="./assets/apple-touch-icon.png">
+<link rel="canonical" href="https://arunkumarkundra.github.io/QT/">
+<link rel="manifest" href="./manifest.webmanifest">
+
+<!-- ===================================================================
+     Link previews.
+     A shared invitation is the first thing most players ever see of this
+     game, so it gets a card rather than a bare URL. Chat apps, social
+     networks and search engines all read these tags when the link is
+     pasted. Absolute URLs are mandatory here: a crawler has no page
+     context to resolve a relative path against, which is the single most
+     common reason a preview silently fails to appear.
+     ================================================================== -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Queen's Tug">
+<meta property="og:url" content="https://arunkumarkundra.github.io/QT/">
+<meta property="og:title" content="Queen's Tug — a game of hidden castles">
+<meta property="og:description" content="Four hidden castles. One wandering queen. Everyone bids in secret at the same time, opposing pulls cancel, and the strongest survivor tugs her. Free to play, or install.">
+<meta property="og:image" content="https://arunkumarkundra.github.io/QT/assets/og.jpg">
+<meta property="og:image:secure_url" content="https://arunkumarkundra.github.io/QT/assets/og.jpg">
+<meta property="og:image:type" content="image/jpeg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Queen's Tug — a crowned queen on a stone board, pulled four ways by coloured arrows.">
+<meta property="og:locale" content="en_GB">
+
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Queen's Tug — a game of hidden castles">
+<meta name="twitter:description" content="Four hidden castles. One wandering queen. Bid in secret to tug her onto yours.">
+<meta name="twitter:image" content="https://arunkumarkundra.github.io/QT/assets/og.jpg">
+<meta name="twitter:image:alt" content="Queen's Tug — a crowned queen on a stone board, pulled four ways by coloured arrows.">
+
+<!-- Added to a phone's home screen, this should look like an app. -->
+<meta name="apple-mobile-web-app-title" content="Queen's Tug">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="application-name" content="Queen's Tug">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;900&family=Spectral:wght@300;400;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
@@ -366,7 +403,7 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--gold-l
 /* Carved stone frame with a struck-gold inlay, as on the key art. */
 .board-plate {
   position: relative;
-  width: min(100%, calc(100vh - 240px));
+  width: min(100%, calc(100vh - 310px));
   aspect-ratio: 1;
   max-height: 100%;
   padding: 13px;
@@ -674,6 +711,160 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--gold-l
 @keyframes gain { 0% { color: var(--ok); transform: scale(1.3); } 100% { color: var(--gold-lt); } }
 
 
+/* ==========================================================================
+   READING A ROUND
+   The landing preview, and the tug-of-war readout underneath the board.
+   ========================================================================== */
+
+/* --- landing preview: where YOUR coins alone would take her --- */
+
+.ghost-queen { z-index: 6; opacity: .5; }
+.ghost-queen svg {
+  width: 72%; height: 72%;
+  opacity: .5;
+  filter: grayscale(.4) drop-shadow(0 0 5px rgba(255, 220, 140, .45));
+}
+.ghost-queen::before {
+  content: '';
+  position: absolute; inset: 8%;
+  border-radius: 50%;
+  border: 1.5px dashed color-mix(in srgb, var(--dir) 75%, transparent);
+  animation: ghost-breathe 1.9s ease-in-out infinite;
+}
+@keyframes ghost-breathe {
+  0%, 100% { opacity: .45; transform: scale(.94); }
+  50% { opacity: .95; transform: scale(1.04); }
+}
+.ghost-queen .ghost-label {
+  position: absolute;
+  bottom: -6%;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: rgba(7, 10, 15, .88);
+  border: 1px solid color-mix(in srgb, var(--dir) 65%, transparent);
+  color: var(--silver);
+  font-size: clamp(8px, 2cqw, 12px);
+  font-weight: 700;
+  line-height: 1.5;
+  white-space: nowrap;
+  z-index: 3;
+}
+/* Unopposed, this bid wins the game. Worth shouting about. */
+.ghost-queen.on-castle { opacity: 1; }
+.ghost-queen.on-castle svg { opacity: .9; filter: drop-shadow(0 0 10px var(--gold)); }
+.ghost-queen.on-castle::before { border-color: var(--gold-lt); border-style: solid; }
+.ghost-queen.on-castle .ghost-label {
+  border-color: var(--gold);
+  color: var(--gold-lt);
+  letter-spacing: .08em;
+}
+.ghost-queen.blocked .ghost-label { border-color: var(--danger); color: #ffb0b2; }
+
+/* The cells she would pass through, which do NOT count as landings. */
+.ghost-step { z-index: 3; }
+.ghost-step::after {
+  content: '';
+  width: 16%; height: 16%;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--dir) 70%, transparent);
+  opacity: .55;
+}
+
+/* --- the tug-of-war readout --- */
+
+.tug {
+  flex: none;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 5px 8px;
+  border-radius: var(--r-md);
+  background: rgba(13, 17, 25, .72);
+  border: 1px solid var(--line-soft);
+  animation: verdict-in .3s ease both;
+}
+.tug-verdict {
+  text-align: center;
+  font-size: 13px;
+  color: var(--silver-dim);
+  line-height: 1.35;
+}
+.tug-verdict b { color: var(--gold-lt); font-weight: 600; }
+
+.rope {
+  display: grid;
+  grid-template-columns: minmax(58px, auto) 1fr minmax(58px, auto) 52px;
+  align-items: center;
+  gap: 7px;
+}
+.rope .end {
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.rope .end-b { justify-content: flex-end; }
+.rope .end i { font-style: normal; color: var(--dir); font-size: 13px; }
+.rope .end b { font-size: 13px; color: var(--silver-dim); }
+.rope .end em { font-style: normal; font-size: 10.5px; color: var(--gold); }
+.rope .end.won b { color: var(--silver); }
+
+/**
+ * The rope itself. The knot sits where the two sides balance, so its distance
+ * from the centre IS the surviving force. Nothing here is computed in CSS that
+ * the engine did not already decide.
+ */
+.rope-bar {
+  position: relative;
+  height: 7px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: linear-gradient(
+    to right,
+    color-mix(in srgb, var(--a) 60%, transparent) 0 var(--share),
+    color-mix(in srgb, var(--b) 60%, transparent) var(--share) 100%
+  );
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .45);
+}
+.rope-bar .knot {
+  position: absolute;
+  top: -2px; bottom: -2px;
+  left: var(--share);
+  width: 3px;
+  margin-left: -1.5px;
+  border-radius: 2px;
+  background: var(--gold-lt);
+  box-shadow: 0 0 5px rgba(247, 221, 160, .85);
+  transition: left .5s cubic-bezier(.22, 1, .36, 1);
+}
+/* The centre mark: where the rope would sit if the two sides were equal. */
+.rope-bar::after {
+  content: '';
+  position: absolute;
+  left: 50%; top: 0; bottom: 0;
+  width: 1px;
+  background: rgba(219, 227, 239, .3);
+}
+.rope .survives {
+  text-align: right;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--gold);
+  white-space: nowrap;
+}
+
+/* Near miss: the queen crossed this castle without stopping on it. */
+.castle-mark.near-miss svg { animation: near-miss 1.1s ease-out 2; }
+@keyframes near-miss {
+  0%, 100% { transform: none; filter: drop-shadow(0 0 8px currentColor); }
+  25% { transform: translateX(-9%) scale(1.15); filter: drop-shadow(0 0 14px #fff); }
+  75% { transform: translateX(9%) scale(1.15); filter: drop-shadow(0 0 14px #fff); }
+}
+
 /* --- status line --- */
 
 .status {
@@ -839,6 +1030,12 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--gold-l
   .brand { font-size: 11px; letter-spacing: .16em; }
   .btn { padding: 12px 18px; }
   .status { font-size: 13.5px; min-height: 30px; }
+  .tug { padding: 4px 6px; gap: 2px; }
+  .tug-verdict { font-size: 12px; }
+  .rope { grid-template-columns: minmax(50px, auto) 1fr minmax(50px, auto) 44px; gap: 5px; }
+  .rope .end, .rope .end b, .rope .end i { font-size: 11.5px; }
+  .rope .end em { font-size: 9.5px; }
+  .rope .survives { font-size: 10px; }
   .result-stats { gap: 13px; font-size: 12px; }
 }
 
@@ -865,13 +1062,36 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--gold-l
   align-items: center;
 }
 .room-seats .seat-chip { flex: 0 0 auto; }
+/* Hold the row's height whatever the seats currently contain, so swapping a
+   bot for a person never nudges the layout. */
+.room-seats { min-height: 52px; }
+@media (max-height: 760px) { .room-seats { min-height: 46px; } }
 
+/**
+ * Reserved space, not measured space.
+ *
+ * Lobby messages run from four words to a full sentence, and on a phone the
+ * same sentence wraps to three lines where it takes one on a laptop. Letting
+ * this box size itself meant the code, the buttons and the humans-only
+ * checkbox all jumped up and down every time the lobby changed — worst of all
+ * at the moment a player joins, which should feel like an arrival rather than
+ * a lurch. The height is now fixed and the text is centred inside it, so
+ * nothing below ever moves.
+ */
 .room-status {
   margin: 0;
   font-size: 13.5px;
   color: var(--silver-dim);
-  min-height: 20px;
   line-height: 1.4;
+  min-height: calc(1.4em * 2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+/* Narrow phones wrap the longer notices onto a third line. */
+@media (max-width: 430px) {
+  .room-status { min-height: calc(1.4em * 3); }
 }
 .room-status.error { color: #ffb0b2; }
 .room-status.waiting { color: var(--gold-lt); }
@@ -928,6 +1148,15 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--gold-l
   opacity: .7;
 }
 .seat-chip.open-seat .avatar { opacity: .55; }
+
+/* We have not heard from the server yet, so this seat's occupant is unknown.
+   It must not read as a person or as a bot — both would be a guess. */
+.seat-chip.unknown {
+  border-style: dotted;
+  background: transparent;
+  opacity: .4;
+}
+.seat-chip.unknown .avatar { opacity: .4; }
 
 /* The replay queen sits on a dark plinth so the bright trail cannot wash her
    out into a ghost. */
@@ -998,7 +1227,7 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--gold-l
       <div class="room-seats" id="room-seats"></div>
       <p class="room-status" id="room-status">Empty seats are played by the computer.</p>
 
-      <button class="code-value" id="room-code" title="Tap to copy the game code">QT-000000</button>
+      <button class="code-value" id="room-code" title="Tap to copy the game code">······</button>
 
       <div class="room-actions">
         <button class="btn btn-sm" id="btn-room-copy">Copy link</button>
@@ -1058,6 +1287,9 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--gold-l
         </div>
       </div>
 
+      <!-- Last round's tug-of-war, drawn from the public aggregate totals. -->
+      <div class="tug" id="tug" hidden></div>
+
       <div class="status" id="status"></div>
     </div>
   </section>
@@ -1110,7 +1342,7 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--gold-l
       <button class="icon-btn" data-close aria-label="Close">✕</button>
     </div>
     <p>Enter the code your friend shared. You will get the identical board.</p>
-    <input class="code-input" id="join-input" placeholder="QT-XXXXXX" maxlength="9" autocomplete="off" spellcheck="false" aria-label="Game code">
+    <input class="code-input" id="join-input" placeholder="XXXXXX" maxlength="9" autocomplete="off" spellcheck="false" aria-label="Game code">
     <div class="modal-actions">
       <button class="btn btn-ghost" data-close>Cancel</button>
       <button class="btn btn-gold" id="btn-join-go">Join</button>
@@ -1241,7 +1473,7 @@ const DEFAULT_CONFIG = {
   replenishCoins: 100,
 
   /** Seconds a player gets to plan each round. Tune here. */
-  decisionTimerMs: 15000,
+  decisionTimerMs: 20000,
 
   /**
    * §4.1 — Conservative safety margin. Hidden objects must be at least this
@@ -2569,7 +2801,13 @@ const SOUND_STORAGE_KEY = 'qt-muted';
 const audio = {
   ctx: null,
   master: null,
-  muted: false,
+  /**
+   * Muted by default. Browsers forbid sound before a gesture, so music can
+   * never begin at load; starting it abruptly on whatever the player happens to
+   * touch first reads as a glitch. Silence that the speaker button visibly
+   * offers to end reads as a choice. The stored preference overrides this.
+   */
+  muted: true,
   ready: false,
   kicked: false,
   themeBus: null,
@@ -2651,7 +2889,27 @@ function ensureContext() {
     } catch {
       /* older engines: the resume().then path below still covers us */
     }
+
+    /**
+     * A one-sample buffer started INSIDE the gesture that created the context
+     * is what convinces iOS the page may make noise. Waiting for the context to
+     * report `running` first guaranteed this never happened during the opening
+     * click: a freshly built context is always suspended, so the kick ran later
+     * from a statechange callback, which is not a gesture. That is why the first
+     * click on Safari was silent and the second was the first one heard.
+     */
+    audio.kicked = true;
+    try {
+      const buf = audio.ctx.createBuffer(1, 1, audio.ctx.sampleRate);
+      const src = audio.ctx.createBufferSource();
+      src.buffer = buf;
+      src.connect(audio.ctx.destination);
+      src.start(0);
+    } catch {
+      /* harmless */
+    }
   }
+    
 
   // 'suspended' is the autoplay lock; 'interrupted' is Safari after a call,
   // an alarm, or a background tab. Both are cured by resume().
@@ -2668,22 +2926,8 @@ function ensureContext() {
 
   flushPending();
 
-  if (!audio.kicked && audio.ctx.state === 'running') {
-    // A one-sample buffer played from inside the gesture is what actually
-    // convinces iOS the page is allowed to make noise. Doing it while the
-    // context is still suspended wastes the only chance we get, so it waits
-    // until the hardware is genuinely running.
-    audio.kicked = true;
-    try {
-      const buf = audio.ctx.createBuffer(1, 1, audio.ctx.sampleRate);
-      const src = audio.ctx.createBufferSource();
-      src.buffer = buf;
-      src.connect(audio.ctx.destination);
-      src.start(0);
-    } catch {
-      /* harmless */
-    }
-  }
+  
+  
 
   return audio.ctx;
 }
@@ -3148,6 +3392,16 @@ function createHost({
   seats = [],
   turnMode = TURN_MODE.SIMULTANEOUS,
   autoResolve = true,
+  /**
+   * A browser wants a polling clock: the countdown on screen is redrawn from
+   * the `tick` event ten times a second. A server does not, and must not — an
+   * interval that never idles keeps a Durable Object resident and billable for
+   * the whole game while doing nothing but reading the clock. With this off,
+   * nothing changes about the rules; the owner simply becomes responsible for
+   * calling `advanceClock()` when `getTimerDeadline()` has passed, which the
+   * server does from a single alarm.
+   */
+  autoTicker = true,
 } = {}) {
   /** The authoritative state. Nothing outside this closure may touch it. */
   let state = createGame({ seed, config, players: seats });
@@ -3293,6 +3547,7 @@ function createHost({
 
   function startTicker() {
     stopTicker();
+    if (!autoTicker) return;
     ticker = setInterval(tick, 100);
   }
   function stopTicker() {
@@ -3342,6 +3597,24 @@ function createHost({
 
     isPresenting: () => Date.now() < presentingUntil,
     presentingUntil: () => presentingUntil,
+
+    /**
+     * The absolute moment this round's timer expires, or null while the clock
+     * is paused. An owner running without `autoTicker` schedules its single
+     * wake-up from this rather than polling.
+     */
+    getTimerDeadline: () => state.timerDeadline,
+
+    /**
+     * Step the clock by hand. Identical to what the internal ticker does, and
+     * safe to call at any time: it returns immediately unless the game is
+     * playing, the presentation window has closed, and a deadline has actually
+     * passed. Idempotent, so an early or duplicated wake-up costs nothing.
+     */
+    advanceClock() {
+      tick();
+      return host;
+    },
     getActiveSeat: () => activeSeat,
     getTurnMode: () => turnMode,
     getConfig: () => ({ ...state.config }),
@@ -3492,139 +3765,73 @@ function createHost({
   return host;
 }
 
-/* ===== src/multiplayer.js ===== */
+/* ===== src/net.js ===== */
 /**
- * QUEEN'S TUG — Peer-to-peer multiplayer
+ * QUEEN'S TUG — Online play (WebSocket client)
  *
- * GitHub Pages cannot run a server, but WebRTC only needs a *signalling*
- * channel to introduce two browsers. Trystero provides that over public relays,
- * after which players are connected directly to each other. No backend, no
- * accounts, no hosting bill.
+ * Replaces the old peer-to-peer layer. Every player, including the one who
+ * created the game, is now a client of the authoritative server in
+ * `worker/index.js`. Nobody's browser runs the engine for anybody else.
  *
- * Topology: HOST-AUTHORITATIVE.
+ * ── What this fixes ───────────────────────────────────────────────────────
  *
- *     Creator's browser                    Joiner's browser
- *     ┌────────────────────┐               ┌──────────────────┐
- *     │ createHost()       │  view(seat)   │ remote proxy     │
- *     │ authoritative state├──────────────►│ latestView only  │
- *     │                    │◄──────────────┤                  │
- *     └────────────────────┘  bid intent   └──────────────────┘
+ * The WebRTC build asked two browsers to open a direct connection. That works
+ * on one Wi-Fi network and fails on mobile data, because carriers hide every
+ * phone behind a shared address that refuses unsolicited inbound connections —
+ * so the peers never saw each other at all. A WebSocket goes OUTWARD to a
+ * server, which every network permits. No NAT traversal, no TURN relay, no
+ * credentials in a public repository.
  *
- * The creator runs the real engine. Every other player holds nothing but the
- * PlayerView the host chose to send them — the same object the local UI uses.
- * This is the §14.1 boundary enforced across a network: a joiner's machine
- * never receives another player's castle, treasure, balance or bid, so a
- * tampered client has nothing to reveal.
+ * ── What it holds ─────────────────────────────────────────────────────────
  *
- * Peers submit INTENT ("stake one coin left"). There is no message that moves
- * the queen, so a hostile peer cannot fabricate an outcome.
+ * One PlayerView: the same object the local UI uses. §14.1 is enforced on the
+ * server, so another player's castle, treasure, balance or bid never reaches
+ * this machine even in memory. Writes are INTENT ('stake two coins left'),
+ * never outcome; no message exists that moves the queen.
  *
- * ── Why the previous build was unstable ───────────────────────────────────
+ * ── Why it feels instant ──────────────────────────────────────────────────
  *
- * It pushed a full state blob to every peer on EVERY host event, and the host
- * emits `tick` ten times a second. Each joiner was therefore sent a complete
- * serialized PlayerView 10×/s for the whole game — plus a lobby broadcast
- * every two seconds, plus (once finished) the entire reveal, which carries the
- * complete queen path and round log and grows all game.
- *
- * A WebRTC data channel saturated like that backs up, and once it backs up the
- * intent messages travelling the other way queue behind it. That is one cause
- * producing both reported symptoms: a link that "breaks in between", and coin
- * staking that misbehaves on a guest's screen.
- *
- * Five changes address it:
- *
- *   1. Pushes are event-filtered and coalesced. `tick` never crosses the wire;
- *      guests run their own countdown against the host's absolute deadline.
- *   2. Payloads are trimmed — the reveal is sent once, at the end.
- *   3. Intents are sequenced and re-sent until acknowledged, so a dropped
- *      message no longer means a lost coin.
- *   4. Guests echo their own staking optimistically and reconcile against the
- *      host's authoritative answer, so the board responds to a tap instantly.
- *   5. Players are identified by a durable clientId rather than by peerId, so
- *      a browser that reconnects gets its own seat back.
+ * Staking is echoed optimistically and reconciled against the server's
+ * authoritative answer, so the board responds to a tap without waiting for a
+ * round trip. Intents carry a sequence number and are re-sent until
+ * acknowledged, so a dropped message is not a lost coin. Because a bid travels
+ * as an absolute placement rather than a delta, re-sending is always safe.
  */
 
 /**
- * Signalling relays, tried in order. Different networks block different
- * things, so this spans two CDNs and two relay strategies rather than betting
- * on one. The first module that exposes `joinRoom` wins.
+ * ─────────────────────────────────────────────────────────────────────────
+ *  SET THIS to the address Cloudflare gives you after the first deploy.
+ *  It looks like:  wss://queens-tug.<your-subdomain>.workers.dev/ws
+ *  Keep the wss:// and keep the /ws at the end.
+ * ─────────────────────────────────────────────────────────────────────────
  */
-const TRYSTERO_URLS = [
-  'https://esm.sh/trystero@0.21/nostr',
-  'https://cdn.jsdelivr.net/npm/trystero@0.21/nostr/+esm',
-  'https://esm.sh/trystero@0.21/mqtt',
-  'https://cdn.jsdelivr.net/npm/trystero@0.21/mqtt/+esm',
-  'https://esm.sh/trystero/nostr',
-  'https://esm.sh/trystero/mqtt',
-];
-
-const APP_ID = 'queens-tug-v1';
-
-/** Wire tuning. Presentation-neutral: none of these can change an outcome. */
-const NET_TUNING = {
-  /** Never send two state pushes closer together than this. */
-  pushCoalesceMs: 90,
-  /** Even with nothing happening, refresh each peer at this rate. */
-  keepAliveMs: 1500,
-  /** Re-send an unacknowledged intent this often until the host confirms it. */
-  intentRetryMs: 350,
-  /** Give up on an intent after this long and tell the player. */
-  intentTimeoutMs: 6000,
-  /** Host → peer liveness probe. */
-  pingMs: 2000,
-  /** No traffic from a peer for this long: treat them as gone. */
-  peerTimeoutMs: 9000,
-  /** Guest: no traffic from the host for this long: show "reconnecting". */
-  hostSilenceMs: 6000,
-  /** Lobby re-broadcast while waiting in the start screen. */
-  lobbyBroadcastMs: 2000,
-};
-
-/** Loaded lazily so solo play never pays for the network code. */
-let trysteroPromise = null;
-function loadTrystero() {
-  if (trysteroPromise) return trysteroPromise;
-  trysteroPromise = (async () => {
-    let lastError = null;
-    for (const url of TRYSTERO_URLS) {
-      try {
-        const mod = await withTimeout(import(/* @vite-ignore */ url), 8000);
-        if (mod?.joinRoom) return mod;
-      } catch (err) {
-        lastError = err;
-      }
-    }
-    throw lastError || new Error('Could not load the networking library.');
-  })();
-  return trysteroPromise;
-}
-
-/** Never let a hung request leave the lobby spinning forever. */
-function withTimeout(promise, ms) {
-  return Promise.race([
-    promise,
-    new Promise((_, reject) => setTimeout(() => reject(new Error('timed out')), ms)),
-  ]);
-}
-
-const NET_STATE = {
-  IDLE: 'IDLE',
-  CONNECTING: 'CONNECTING',
-  WAITING: 'WAITING',
-  READY: 'READY',
-  PLAYING: 'PLAYING',
-  ERROR: 'ERROR',
-};
+const SERVER_URL = 'wss://qt.arunkumarkundra.workers.dev/ws';
 
 const CLIENT_ID_KEY = 'qt-client-id';
 let fallbackClientId = null;
 
+const NET_TUNING = {
+  /** Keeps the socket warm and doubles as our liveness signal. */
+  pingMs: 10000,
+  /** Unacknowledged intents are re-sent this often. */
+  retryMs: 400,
+  /** An intent unacknowledged this long is reported to the player. */
+  intentGiveUpMs: 6000,
+  /** Silence longer than this means the link is in trouble. */
+  serverSilenceMs: 12000,
+  /** Reconnection backoff, in order. Repeats the last value forever. */
+  reconnectMs: [500, 1000, 2000, 4000, 8000],
+};
+
+/** Online play needs nothing exotic — any browser from the last decade. */
+function multiplayerSupported() {
+  return typeof WebSocket !== 'undefined';
+}
+
 /**
- * A durable identity for this browser, independent of the WebRTC peerId, which
- * is regenerated on every reconnection. This is what lets a player who drops
- * out and comes back get their own seat, castle and coins returned rather than
- * being handed a new seat or none at all.
+ * A durable identity for this browser, so a player who drops out and comes
+ * back is recognised and handed their own seat, castle and coins rather than a
+ * new seat or none at all.
  */
 function clientId() {
   try {
@@ -3643,515 +3850,47 @@ function clientId() {
 }
 
 /**
- * Open a room. Both creator and joiner call this; `isHost` decides which side
- * of the protocol they speak.
- */
-async function openRoom({ code, isHost, onEvent }) {
-  const { joinRoom } = await loadTrystero();
-  const room = joinRoom({ appId: APP_ID }, code);
-
-  // Trystero action names are capped at 12 bytes.
-  const [sendState, onState] = room.makeAction('state');
-  const [sendIntent, onIntent] = room.makeAction('intent');
-  const [sendLobby, onLobby] = room.makeAction('lobby');
-  // An explicit greeting removes any dependence on peer-join event ordering,
-  // which is the classic way a lobby ends up silently waiting forever.
-  const [sendHello, onHello] = room.makeAction('hello');
-  // Acknowledgement of a received intent, carrying the sequence number the
-  // host has applied. Without this a dropped bid is simply lost.
-  const [sendAck, onAck] = room.makeAction('ack');
-  // Liveness + clock offset. Cheap, and it keeps the data channel warm, which
-  // some NATs need in order not to reap an idle mapping.
-  const [sendPing, onPing] = room.makeAction('ping');
-  const [sendPong, onPong] = room.makeAction('pong');
-
-  const api = {
-    room,
-    isHost,
-    code,
-    id: clientId(),
-    sendState,
-    sendIntent,
-    sendLobby,
-    sendHello,
-    sendAck,
-    sendPing,
-    sendPong,
-    onState,
-    onIntent,
-    onLobby,
-    onHello,
-    onAck,
-    onPing,
-    onPong,
-    getPeers: () => Object.keys(room.getPeers?.() || {}),
-    leave() {
-      try {
-        room.leave();
-      } catch {
-        /* already gone */
-      }
-    },
-  };
-
-  room.onPeerJoin((peerId) => onEvent?.({ type: 'peer-join', peerId }));
-  room.onPeerLeave((peerId) => onEvent?.({ type: 'peer-leave', peerId }));
-
-  // Answer every ping so the other side can measure liveness and clock skew.
-  onPing((msg, peerId) => {
-    try {
-      sendPong({ t: msg?.t, now: Date.now() }, peerId);
-    } catch {
-      /* peer vanished mid-flight */
-    }
-  });
-
-  /**
-   * Announce ourselves repeatedly for a short while. Whichever side comes up
-   * second still gets seen. The greeting carries our durable clientId so the
-   * host can restore a seat we already held.
-   */
-  if (!isHost) {
-    let tries = 0;
-    const knock = () => {
-      if (tries++ > 40) return;
-      try {
-        sendHello({ t: 'hello', id: api.id });
-      } catch {
-        /* not connected yet */
-      }
-      api._knockTimer = setTimeout(knock, tries < 10 ? 700 : 2000);
-    };
-    knock();
-    const stopLeaving = api.leave;
-    api.leave = () => {
-      clearTimeout(api._knockTimer);
-      stopLeaving();
-    };
-  }
-
-  return api;
-}
-
-/* ------------------------------------------------------------------ *
- * HOST SIDE
- * ------------------------------------------------------------------ */
-
-/**
- * Wrap a local authoritative host so that remote seats are fed filtered views
- * and their intents are validated exactly like local ones.
+ * Join a game and return an object with the SAME read/write surface as the
+ * local host, so the UI cannot tell the difference and needs no branching.
  *
- * `humansOnly` changes what happens when somebody leaves: instead of a
- * computer covering the seat, the seat is retired and the table plays on,
- * provided at least two people remain.
+ * `onLobby` receives the pre-game roster (including this player's own seat and
+ * whether they are the one who may press Start). `onEvent` receives connection
+ * notices. Game events go to `subscribe()`, exactly as with a local host.
  */
-function attachHostToRoom({ net, host, onLobbyChange, onEvent, humansOnly = false }) {
-  /**
-   * The seating book. Keyed by durable clientId, not by peerId, so a browser
-   * that reconnects is recognised as the same player.
-   *
-   *   clientId -> { seat, peerId, lastSeen, present }
-   */
-  const roster = new Map();
-  /** Highest intent sequence applied per seat; anything older is a duplicate. */
-  const appliedSeq = new Map();
-  let currentHost = host;
-  let unsubscribe = null;
-  let started = false;
+function connectRoom({ code, onLobby, onEvent }) {
+  const listeners = new Set();
+
+  let ws = null;
   let disposed = false;
-  let onlyHumans = humansOnly;
+  let reconnectAttempt = 0;
+  let reconnectTimer = null;
 
-  let pushTimer = null;
-  let lastPushAt = 0;
-
-  const entryOfPeer = (peerId) => {
-    for (const entry of roster.values()) if (entry.peerId === peerId) return entry;
-    return null;
-  };
-  const seatOfPeer = (peerId) => entryOfPeer(peerId)?.seat ?? null;
-
-  function seatCount() {
-    return currentHost.getPublicSummary().seats.length;
-  }
-
-  function nextFreeSeat() {
-    const total = seatCount();
-    const taken = new Set([0, ...[...roster.values()].map((e) => e.seat)]);
-    for (let seat = 1; seat < total; seat++) if (!taken.has(seat)) return seat;
-    return null;
-  }
-
-  /** Humans present right now: the creator plus every connected joiner. */
-  function humanRoster() {
-    return [
-      { seat: 0, clientId: net.id, peerId: null, isHost: true },
-      ...[...roster.entries()]
-        .filter(([, e]) => e.present)
-        .sort((a, b) => a[1].seat - b[1].seat)
-        .map(([id, e]) => ({ seat: e.seat, clientId: id, peerId: e.peerId, isHost: false })),
-    ];
-  }
-
-  function lobbySnapshot() {
-    const total = seatCount();
-    const filled = new Set([0, ...[...roster.values()].filter((e) => e.present).map((e) => e.seat)]);
-    return {
-      code: net.code,
-      humansOnly: onlyHumans,
-      started,
-      seats: Array.from({ length: total }, (_, seat) => ({
-        seat,
-        kind: filled.has(seat) ? 'human' : 'bot',
-      })),
-    };
-  }
-
-  function broadcastLobby() {
-    if (disposed) return;
-    try {
-      net.sendLobby(lobbySnapshot());
-    } catch {
-      /* nobody connected yet */
-    }
-    onLobbyChange?.(lobbySnapshot());
-  }
-
-  /**
-   * Push each remote seat its own private view. Never broadcast a view.
-   *
-   * Coalesced: many host events arrive in a burst (stage, lock, resolve) and
-   * only the final state matters. Sending each one separately is what floods
-   * the channel.
-   */
-  function pushViews({ force = false } = {}) {
-    if (disposed) return;
-    const wait = Math.max(0, NET_TUNING.pushCoalesceMs - (Date.now() - lastPushAt));
-    if (!force && wait > 0) {
-      if (!pushTimer) {
-        pushTimer = setTimeout(() => {
-          pushTimer = null;
-          pushViews({ force: true });
-        }, wait);
-      }
-      return;
-    }
-    if (pushTimer) {
-      clearTimeout(pushTimer);
-      pushTimer = null;
-    }
-    lastPushAt = Date.now();
-
-    const summary = currentHost.getPublicSummary();
-    if (summary.status !== 'PLAYING' && summary.status !== 'FINISHED') return;
-    const presenting = currentHost.isPresenting();
-    const lastResolution = currentHost.getLastResolution();
-
-    /**
-     * The reveal is large — every castle, the complete queen path and the full
-     * round log — and it is only meaningful once. Sending it on every push was
-     * a growing redundant payload for the whole of a finished game.
-     */
-    let reveal = null;
-    if (summary.status === 'FINISHED') {
-      try {
-        reveal = currentHost.getReveal();
-      } catch {
-        reveal = null; // still running — the boundary refuses, as it should
-      }
-    }
-
-    for (const entry of roster.values()) {
-      if (!entry.peerId) continue;
-      try {
-        net.sendState(
-          {
-            view: currentHost.getView(entry.seat),
-            summary,
-            presenting,
-            lastResolution,
-            reveal,
-            /** Host wall-clock, so the guest can correct for clock skew. */
-            hostNow: Date.now(),
-            ackSeq: appliedSeq.get(entry.seat) ?? 0,
-          },
-          entry.peerId
-        );
-      } catch {
-        /* the peer went away between the check and the send */
-      }
-    }
-  }
-
-  /* ---------------- inbound ---------------- */
-
-  net.onHello((msg, peerId) => {
-    const id = typeof msg?.id === 'string' ? msg.id : null;
-    api.admit(peerId, id);
-  });
-
-  net.onIntent((msg, peerId) => {
-    const entry = entryOfPeer(peerId);
-    if (!entry) return; // not seated; ignore
-    entry.lastSeen = Date.now();
-    const seat = entry.seat;
-
-    const seq = Number(msg?.seq) || 0;
-    const applied = appliedSeq.get(seat) ?? 0;
-
-    /**
-     * Re-sent messages are expected — that is how a dropped intent recovers.
-     * Applying one twice must therefore be harmless, which is why a bid is
-     * sent as an absolute placement ("UP:2, LEFT:1") rather than as a delta
-     * ("+1 coin left"). Deltas plus retries would double-charge a player.
-     */
-    if (seq && seq <= applied) {
-      try {
-        net.sendAck({ seq: applied }, peerId);
-      } catch {
-        /* gone */
-      }
-      return;
-    }
-
-    if (msg?.t === 'bid') currentHost.stageBid(seat, msg.bid);
-    else if (msg?.t === 'lock') currentHost.lock(seat);
-    else if (msg?.t === 'bye') {
-      api.release(peerId, { voluntary: true });
-      return;
-    }
-
-    if (seq) appliedSeq.set(seat, seq);
-    try {
-      net.sendAck({ seq: appliedSeq.get(seat) ?? 0 }, peerId);
-    } catch {
-      /* gone */
-    }
-    pushViews();
-  });
-
-  net.onPong((_msg, peerId) => {
-    const entry = entryOfPeer(peerId);
-    if (entry) entry.lastSeen = Date.now();
-  });
-
-  /* ---------------- timers ---------------- */
-
-  /** Lobby re-broadcast, but only while we are still in the lobby. */
-  const lobbyBeat = setInterval(() => {
-    if (!started) broadcastLobby();
-  }, NET_TUNING.lobbyBroadcastMs);
-
-  /**
-   * Liveness. `onPeerLeave` is not reliable on flaky mobile networks — a phone
-   * that loses signal often produces no event at all — so silence is treated
-   * as absence after a grace period, and a keep-alive push stops an idle NAT
-   * mapping from being reaped underneath a thinking player.
-   */
-  const healthBeat = setInterval(() => {
-    if (disposed) return;
-    const now = Date.now();
-    for (const entry of roster.values()) {
-      if (!entry.peerId || !entry.present) continue;
-      try {
-        net.sendPing({ t: now }, entry.peerId);
-      } catch {
-        /* gone */
-      }
-      if (now - entry.lastSeen > NET_TUNING.peerTimeoutMs) api.release(entry.peerId);
-    }
-    if (started) pushViews({ force: true });
-  }, Math.min(NET_TUNING.pingMs, NET_TUNING.keepAliveMs));
-
-  const api = {
-    lobbySnapshot,
-    humanRoster,
-    pushViews,
-    broadcastLobby,
-    seatOfPeer,
-    setHumansOnly(value) {
-      onlyHumans = !!value;
-      broadcastLobby();
-    },
-
-    /** Point the bridge at a freshly-built host, e.g. after seat compaction. */
-    rebind(nextHost) {
-      unsubscribe?.();
-      currentHost = nextHost;
-      appliedSeq.clear();
-      unsubscribe = currentHost.subscribe(onHostEvent);
-      return api;
-    },
-
-    /**
-     * Re-seat everyone into contiguous seats 0..n-1. Called just before a
-     * humans-only game starts, because the engine's playerCount has to match
-     * the number of people at the table and seats must have no holes: if the
-     * player who took seat 2 leaves the lobby, seat 1 is empty and a
-     * three-player game would be built around a gap.
-     *
-     * Returns the clientIds in seat order.
-     */
-    compactSeats() {
-      const present = [...roster.entries()]
-        .filter(([, e]) => e.present)
-        .sort((a, b) => a[1].seat - b[1].seat);
-      present.forEach(([, e], i) => {
-        e.seat = i + 1; // seat 0 is always the creator
-      });
-      appliedSeq.clear();
-      return [net.id, ...present.map(([id]) => id)];
-    },
-
-    markStarted() {
-      started = true;
-      broadcastLobby();
-      pushViews({ force: true });
-    },
-
-    /**
-     * A browser appeared. Give it the seat it already held if we know it,
-     * otherwise the next free one.
-     */
-    admit(peerId, id) {
-      if (disposed) return null;
-      const key = id || `peer:${peerId}`;
-      const existing = roster.get(key);
-
-      if (existing) {
-        const returning = !existing.present || existing.peerId !== peerId;
-        existing.peerId = peerId;
-        existing.present = true;
-        existing.lastSeen = Date.now();
-        if (returning) {
-          /**
-           * §21 — a returning player takes their own seat back. Their castle,
-           * coins and treasure are exactly where they left them, because the
-           * authoritative state never moved.
-           */
-          currentHost.setControl(existing.seat, 'HUMAN', { connectionStatus: 'CONNECTED' });
-          onEvent?.({ type: 'peer-returned', seat: existing.seat });
-          broadcastLobby();
-          pushViews({ force: true });
-        }
-        return existing.seat;
-      }
-
-      // A game already running has no free seats to hand out.
-      if (started) return null;
-
-      const seat = nextFreeSeat();
-      if (seat === null) return null;
-      roster.set(key, { seat, peerId, lastSeen: Date.now(), present: true });
-      currentHost.setControl(seat, 'HUMAN', { connectionStatus: 'CONNECTED' });
-      onEvent?.({ type: 'peer-seated', seat });
-      broadcastLobby();
-      pushViews({ force: true });
-      return seat;
-    },
-
-    /**
-     * A browser vanished.
-     *
-     * In a normal game the computer covers the seat immediately so the round
-     * can still resolve — the takeover rule, applied across a network. In a
-     * humans-only game no bot ever plays for a person, so the seat is retired
-     * instead, and if that leaves fewer than two players the game ends.
-     */
-    release(peerId, { voluntary = false } = {}) {
-      const entry = entryOfPeer(peerId);
-      if (!entry || !entry.present) return null;
-      const seat = entry.seat;
-      entry.present = false;
-      entry.peerId = null;
-
-      if (!started) {
-        // Left the lobby before kick-off: free the seat entirely so the next
-        // arrival can have it.
-        for (const [key, e] of roster) if (e === entry) roster.delete(key);
-        broadcastLobby();
-        return seat;
-      }
-
-      if (onlyHumans) {
-        currentHost.setControl(seat, 'HUMAN', { connectionStatus: 'DISCONNECTED' });
-        currentHost.retire(seat);
-        onEvent?.({ type: 'peer-retired', seat, voluntary });
-        if (currentHost.getLiveHumanCount() < 2) {
-          currentHost.abandon('Not enough players remain to continue.');
-          onEvent?.({ type: 'abandoned' });
-        }
-      } else {
-        currentHost.setControl(seat, 'AI', {
-          reason: 'disconnected',
-          connectionStatus: 'DISCONNECTED',
-        });
-        onEvent?.({ type: 'peer-covered', seat });
-      }
-
-      broadcastLobby();
-      pushViews({ force: true });
-      return seat;
-    },
-
-    dispose() {
-      disposed = true;
-      clearInterval(lobbyBeat);
-      clearInterval(healthBeat);
-      if (pushTimer) clearTimeout(pushTimer);
-      unsubscribe?.();
-    },
-  };
-
-  /**
-   * Only events that change what a guest sees are worth a push. `tick` is
-   * emitted ten times a second and carries nothing a guest cannot compute from
-   * `view.timerDeadline`, so it is dropped here rather than flooding the wire.
-   */
-  function onHostEvent(evt) {
-    if (evt?.type === 'tick') return;
-    pushViews({ force: evt?.type === 'resolution' || evt?.type === 'finished' });
-  }
-
-  unsubscribe = currentHost.subscribe(onHostEvent);
-
-  return api;
-}
-
-/* ------------------------------------------------------------------ *
- * CLIENT SIDE
- * ------------------------------------------------------------------ */
-
-/**
- * A stand-in for the authoritative host, for a player who is not running it.
- * It exposes the SAME read/write surface as `createHost`, so the UI cannot
- * tell the difference and needs no branching. It holds only what arrived over
- * the wire: one PlayerView.
- */
-function createRemoteGame({ net, onEvent, onLobby }) {
   let view = null;
   let summary = null;
   let presenting = false;
   let lastResolution = null;
   let reveal = null;
+  let endedReason = null;
+  let lobby = null;
+
   let lastRound = 0;
+  let lastLocked = [];
   let lastMessageAt = 0;
-  let clockOffset = 0; // hostNow - ourNow
+  let clockOffset = 0; // serverNow - ourNow
   let healthy = false;
-  const listeners = new Set();
 
   /**
-   * Outstanding intents, newest last. Each is re-sent until the host
-   * acknowledges its sequence number. Because a bid is an absolute placement
-   * rather than a delta, re-sending is always safe.
+   * Outstanding intents, newest last. Each is re-sent until the server
+   * acknowledges its sequence number.
    */
   let seq = 0;
   let ackedSeq = 0;
-  const outbox = new Map(); // seq -> { msg, sentAt, firstSentAt }
+  const outbox = new Map(); // seq -> { msg, firstSentAt }
 
   /**
-   * What we believe our bid to be, ahead of the host confirming it. The board
-   * has to respond to a tap immediately or the game feels broken; this is the
-   * optimistic half, and every host message reconciles it.
+   * What we believe our bid to be, ahead of the server confirming it. The
+   * board has to respond to a tap immediately or the game feels broken; this
+   * is the optimistic half, and every server message reconciles it.
    */
   let pendingBid = null;
   let pendingLock = false;
@@ -4166,87 +3905,128 @@ function createRemoteGame({ net, onEvent, onLobby }) {
     }
   };
 
-  /** Merge the optimistic bid over the last authoritative view. */
-  function effectiveView() {
-    if (!view) return null;
-    if (!pendingBid && !pendingLock) return view;
-    const total = pendingBid
-      ? Object.values(pendingBid).reduce((s, n) => s + (n || 0), 0)
-      : view.you.currentBidTotal;
-    return {
-      ...view,
-      you: {
-        ...view.you,
-        currentBid: pendingBid ? { ...pendingBid } : view.you.currentBid,
-        currentBidTotal: total,
-        locked: pendingLock || view.you.locked,
-      },
-    };
-  }
+  /* ---------------- socket ---------------- */
 
-  function send(msg) {
-    seq += 1;
-    outbox.set(seq, { msg: { ...msg, seq }, sentAt: 0, firstSentAt: Date.now() });
-    flushOutbox();
-    return seq;
-  }
+  function open() {
+    if (disposed) return;
+    let socket;
+    try {
+      socket = new WebSocket(`${SERVER_URL}?code=${encodeURIComponent(code)}`);
+    } catch {
+      scheduleReconnect();
+      return;
+    }
+    ws = socket;
 
-  function flushOutbox() {
-    const now = Date.now();
-    for (const [n, rec] of outbox) {
-      if (n <= ackedSeq) {
-        outbox.delete(n);
-        continue;
-      }
-      if (now - rec.firstSentAt > NET_TUNING.intentTimeoutMs) {
-        outbox.delete(n);
-        emit('intent-lost', { seq: n });
-        continue;
-      }
-      if (now - rec.sentAt < NET_TUNING.intentRetryMs) continue;
-      rec.sentAt = now;
+    socket.addEventListener('open', () => {
+      if (disposed) return;
+      reconnectAttempt = 0;
+      // The greeting carries our durable id, which is how the server restores
+      // a seat we already held.
+      raw({ t: 'hello', id: clientId() });
+      flushOutbox({ force: true });
+      onEvent?.({ type: 'open' });
+    });
+
+    socket.addEventListener('message', (event) => {
+      if (disposed) return;
+      let msg;
       try {
-        net.sendIntent(rec.msg);
+        msg = JSON.parse(event.data);
       } catch {
-        /* not connected this instant; the next sweep tries again */
+        return;
       }
+      lastMessageAt = Date.now();
+      handle(msg);
+    });
+
+    const closed = () => {
+      if (disposed || ws !== socket) return;
+      ws = null;
+      if (healthy) {
+        healthy = false;
+        emit('link-down');
+      }
+      scheduleReconnect();
+    };
+    socket.addEventListener('close', closed);
+    socket.addEventListener('error', closed);
+  }
+
+  function scheduleReconnect() {
+    if (disposed || reconnectTimer) return;
+    const steps = NET_TUNING.reconnectMs;
+    const delay = steps[Math.min(reconnectAttempt, steps.length - 1)];
+    reconnectAttempt += 1;
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      open();
+    }, delay);
+  }
+
+  function raw(msg) {
+    if (!ws || ws.readyState !== 1) return false;
+    try {
+      ws.send(JSON.stringify(msg));
+      return true;
+    } catch {
+      return false;
     }
   }
 
-  function absorbAck(n) {
-    if (!(n > ackedSeq)) return;
-    ackedSeq = n;
-    for (const key of [...outbox.keys()]) if (key <= ackedSeq) outbox.delete(key);
+  /* ---------------- inbound ---------------- */
+
+  function handle(msg) {
+    switch (msg.t) {
+      case 'lobby':
+        lobby = msg;
+        onLobby?.(msg);
+        return;
+
+      case 'ack':
+        ackedSeq = Math.max(ackedSeq, Number(msg.seq) || 0);
+        for (const n of [...outbox.keys()]) if (n <= ackedSeq) outbox.delete(n);
+        return;
+
+      case 'pong':
+        if (typeof msg.now === 'number') clockOffset = msg.now - Date.now();
+        return;
+
+      case 'error':
+        onEvent?.({ type: 'error', message: msg.message });
+        return;
+
+      case 'state':
+        applyState(msg);
+        return;
+
+      default:
+        return;
+    }
   }
 
-  net.onAck((msg) => {
-    lastMessageAt = Date.now();
-    absorbAck(Number(msg?.seq) || 0);
-  });
-
-  net.onState((msg) => {
-    if (!msg?.view) return;
-    lastMessageAt = Date.now();
-    if (typeof msg.hostNow === 'number') clockOffset = msg.hostNow - Date.now();
-    if (typeof msg.ackSeq === 'number') absorbAck(msg.ackSeq);
-
+  function applyState(msg) {
     const previous = view;
     view = msg.view;
     summary = msg.summary;
-    presenting = msg.presenting;
+    presenting = !!msg.presenting;
+    endedReason = msg.endedReason ?? null;
     if (msg.reveal) reveal = msg.reveal;
+    if (typeof msg.hostNow === 'number') clockOffset = msg.hostNow - Date.now();
+    ackedSeq = Math.max(ackedSeq, Number(msg.ackSeq) || 0);
+    for (const n of [...outbox.keys()]) if (n <= ackedSeq) outbox.delete(n);
 
     /**
-     * Reconcile the optimistic bid. Once every intent we sent has been
-     * acknowledged, the host's copy is by definition complete and ours is
-     * redundant — dropping it here is what stops a rejected bid (over budget,
-     * aimed off the board, locked too late) from sticking on screen.
+     * Once every intent we sent has been acknowledged, the server's copy is by
+     * definition complete and ours is redundant. Dropping it here is what stops
+     * a rejected bid — over budget, off the board, locked too late — from
+     * sticking on screen.
      */
     if (!outbox.size) {
       pendingBid = null;
       pendingLock = false;
     }
-    if (view.you.locked) pendingLock = false;
+    if (view?.you?.locked) pendingLock = false;
     if (previous && previous.roundNumber !== view.roundNumber) {
       pendingBid = null;
       pendingLock = false;
@@ -4261,6 +4041,19 @@ function createRemoteGame({ net, onEvent, onLobby }) {
       emit('link-up');
     }
 
+    // A rival locking in is worth hearing. The server does not send a discrete
+    // event for it, so notice the change in the public summary instead.
+    const locked = (summary?.seats || []).filter((s) => s.locked).map((s) => s.seat);
+    for (const s of locked) {
+      if (!lastLocked.includes(s)) emit('seat-locked', { seat: s });
+    }
+    lastLocked = locked;
+
+    if (summary?.status === 'FINISHED' && !summary.winner && endedReason) {
+      emit('abandoned', { reason: endedReason });
+      return;
+    }
+
     if (isNewResolution) {
       lastRound = incoming.roundNumber;
       emit('resolution', { roundNumber: incoming.roundNumber });
@@ -4270,49 +4063,94 @@ function createRemoteGame({ net, onEvent, onLobby }) {
       emit('state');
     }
     onEvent?.({ type: 'sync' });
-  });
+  }
 
-  if (onLobby) net.onLobby((lobby) => onLobby(lobby));
+  /* ---------------- outbound intents ---------------- */
+
+  function send(msg) {
+    seq += 1;
+    outbox.set(seq, { msg: { ...msg, seq }, firstSentAt: Date.now() });
+    flushOutbox({ force: true });
+  }
+
+  function flushOutbox({ force = false } = {}) {
+    const now = Date.now();
+    for (const [n, item] of outbox) {
+      if (n <= ackedSeq) {
+        outbox.delete(n);
+        continue;
+      }
+      if (now - item.firstSentAt > NET_TUNING.intentGiveUpMs) {
+        outbox.delete(n);
+        emit('intent-lost', { seq: n });
+        continue;
+      }
+      if (force || now - (item.sentAt || 0) > NET_TUNING.retryMs) {
+        if (raw(item.msg)) item.sentAt = now;
+      }
+    }
+  }
 
   /**
-   * The guest runs its own clock. The host sends an absolute `timerDeadline`,
-   * so the countdown can be rendered locally at 10 Hz without a single packet
-   * crossing the network — which is precisely the traffic that used to break
-   * the link. The same sweep retries unacknowledged intents and notices a
-   * silent host, rather than leaving the player staring at a frozen board.
+   * The client runs its own clock. The server sends an absolute
+   * `timerDeadline`, so the countdown is rendered locally at 10 Hz without a
+   * single packet crossing the network. The same sweep retries unacknowledged
+   * intents and notices a silent server rather than leaving the player staring
+   * at a frozen board.
    */
   const heartbeat = setInterval(() => {
+    if (disposed) return;
     flushOutbox();
     if (view) emit('tick');
-    if (healthy && lastMessageAt && Date.now() - lastMessageAt > NET_TUNING.hostSilenceMs) {
+    if (healthy && lastMessageAt && Date.now() - lastMessageAt > NET_TUNING.serverSilenceMs) {
       healthy = false;
       emit('link-down');
     }
   }, 100);
 
+  const pinger = setInterval(() => {
+    if (!disposed) raw({ t: 'ping', now: Date.now() });
+  }, NET_TUNING.pingMs);
+
+  open();
+
+  /* ---------------- public surface ---------------- */
+
+  /** Merge the optimistic bid over the last authoritative view. */
+  function effectiveView() {
+    if (!view) return null;
+    if (!pendingBid && !pendingLock) return view;
+    return {
+      ...view,
+      you: {
+        ...view.you,
+        currentBid: pendingBid || view.you.currentBid,
+        locked: pendingLock || view.you.locked,
+      },
+    };
+  }
+
   const game = {
     isRemote: true,
 
-    getView() {
-      return effectiveView();
-    },
-    getPublicSummary() {
-      return summary;
-    },
-    getLastResolution() {
-      return lastResolution;
-    },
+    /* ---- reads ---- */
+    getView: () => effectiveView(),
+    getPublicSummary: () => summary,
+    getLastResolution: () => lastResolution,
     getReveal() {
       if (!reveal) throw new Error('Reveal not available yet.');
       return reveal;
     },
     isPresenting: () => presenting,
-    getSeat: () => view?.you?.seat ?? null,
-    /** Host clock minus ours, so deadlines line up across devices. */
+    getSeat: () => view?.you?.seat ?? lobby?.yourSeat ?? null,
+    /** Server clock minus ours, so deadlines line up across devices. */
     getClockOffset: () => clockOffset,
     isHealthy: () => healthy,
+    getLobby: () => lobby,
+    /** Only one player may start the game or change its settings. */
+    isAdmin: () => !!lobby?.admin,
 
-    /* writes are intents sent upstream; the host decides */
+    /* ---- writes: intent only ---- */
     stageBid(_seat, bid) {
       pendingBid = { ...bid };
       send({ t: 'bid', bid });
@@ -4325,33 +4163,44 @@ function createRemoteGame({ net, onEvent, onLobby }) {
       emit('state');
       return { ok: true };
     },
-    /** Tell the host we are leaving on purpose, so it need not wait us out. */
-    sayGoodbye() {
-      try {
-        seq += 1;
-        net.sendIntent({ t: 'bye', seq });
-      } catch {
-        /* nothing to do */
-      }
+
+    /* ---- lobby controls (ignored by the server unless we are admin) ---- */
+    setHumansOnly(value) {
+      raw({ t: 'config', humansOnly: !!value });
+    },
+    startGame() {
+      raw({ t: 'start' });
     },
 
     subscribe(fn) {
       listeners.add(fn);
       return () => listeners.delete(fn);
     },
+
+    /**
+     * A deliberate exit. Telling the server means the table need not wait out a
+     * liveness timeout before the round can resolve.
+     */
+    sayGoodbye() {
+      raw({ t: 'bye' });
+    },
+
     dispose() {
+      disposed = true;
       clearInterval(heartbeat);
-      outbox.clear();
+      clearInterval(pinger);
+      if (reconnectTimer) clearTimeout(reconnectTimer);
       listeners.clear();
+      try {
+        ws?.close(1000, 'Left the game.');
+      } catch {
+        /* already closed */
+      }
+      ws = null;
     },
   };
 
   return game;
-}
-
-/** Is peer-to-peer play even possible in this browser? */
-function multiplayerSupported() {
-  return typeof RTCPeerConnection !== 'undefined' && typeof window !== 'undefined';
 }
 
 /* ===== src/ui.js ===== */
@@ -4516,15 +4365,26 @@ const ART = {
 const app = {
   /** The authoritative host when we run it, or a remote proxy when we don't. */
   game: null,
-  /** Set only when this browser is the authority. */
+  /**
+   * A local authoritative host. Online games no longer use one — the server is
+   * the authority — so this is set only for solo and pass-and-play, and when
+   * the network is unavailable.
+   */
   host: null,
-  net: null,
-  bridge: null,
-  isHost: true,
+  /** True while we are connected to a game on the server. */
   online: false,
+  /** Server-side flag: only one player may start the game or change settings. */
+  isHost: true,
   seat: 0,
   /** Order coins were placed, so a single undo is always possible. */
   placements: [],
+  /**
+   * The bid this seat had on the board when the round closed. The view clears
+   * `currentBid` the moment the round resolves, so the readout would otherwise
+   * have no way to tell you what YOUR share of the tug was. Captured on every
+   * staking gesture, so it is correct even when the timer locks for you.
+   */
+  stagedBid: null,
   /** Bumped whenever a game is mounted or torn down; in-flight animations
    *  belonging to an older generation abandon themselves. */
   epoch: 0,
@@ -4565,10 +4425,206 @@ function randomCode() {
   const abc = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
   let out = '';
   for (let i = 0; i < 6; i++) out += abc[Math.floor(Math.random() * abc.length)];
-  return `QT-${out}`;
+  return out;
+}
+
+/**
+ * Accept a game code however a person types it. The alphabet already excludes
+ * the characters people confuse — no 0/O, no 1/I/L — so the only real work is
+ * case, stray spaces, and the `QT-` prefix that used to be mandatory. Links
+ * shared before it was dropped still work, because the prefix is simply
+ * stripped rather than rejected.
+ */
+function normaliseCode(raw) {
+  return String(raw || '')
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, '')
+    .replace(/^QT-?/, '');
 }
 
 const inviteUrl = (code) => `${location.origin}${location.pathname}?game=${encodeURIComponent(code)}`;
+
+/* ------------------------------------------------------------------ *
+ * Reading a round
+ *
+ * Three things a new player could not previously work out:
+ *   1. that the number of coins IS the distance travelled,
+ *   2. what happened to the coins they spent,
+ *   3. that passing over a castle is not the same as landing on it.
+ *
+ * All three are answered here, and all three are answered from information
+ * this seat already legitimately holds. The landing preview uses nothing but
+ * your own staged bid; the tug readout uses `lastResolution.totals`, which
+ * §5.1 makes public and which playerView.js already sends to every seat. No
+ * hidden field is read, so the information boundary is untouched.
+ * ------------------------------------------------------------------ */
+
+const DIR_ARROW = { UP: '↑', DOWN: '↓', LEFT: '←', RIGHT: '→' };
+/** The two tug-of-war ropes. Each is a pair that cancels against itself. */
+const AXES = [
+  { a: 'UP', b: 'DOWN' },
+  { a: 'LEFT', b: 'RIGHT' },
+];
+
+/** Cancel a bid against itself and take the single strongest survivor. */
+function netOf(bid = {}) {
+  const vertical = (bid.UP || 0) - (bid.DOWN || 0);
+  const horizontal = (bid.RIGHT || 0) - (bid.LEFT || 0);
+  const surviving = {
+    UP: Math.max(0, vertical),
+    DOWN: Math.max(0, -vertical),
+    RIGHT: Math.max(0, horizontal),
+    LEFT: Math.max(0, -horizontal),
+  };
+  const best = Math.max(surviving.UP, surviving.DOWN, surviving.LEFT, surviving.RIGHT);
+  const winners = DIRECTIONS.filter((d) => surviving[d] === best && best > 0);
+  return { surviving, direction: winners.length === 1 ? winners[0] : null, distance: winners.length === 1 ? best : 0 };
+}
+
+/**
+ * Where the queen would finish if THIS SEAT were the only one pulling. It is
+ * a preview of your own intent, not a prediction of the round — the whole
+ * point of the game is that you cannot predict the round.
+ */
+function soloProjection(view) {
+  const { direction, distance } = netOf(view.you.currentBid);
+  if (!direction) return null;
+
+  const v = VECTORS[direction];
+  let { r, c } = view.queenPosition;
+  const path = [];
+  let blocked = false;
+  for (let i = 0; i < distance; i++) {
+    const nr = r + v.dr;
+    const nc = c + v.dc;
+    if (nr < 0 || nr >= view.board.height || nc < 0 || nc >= view.board.width) {
+      blocked = true;
+      break;
+    }
+    r = nr;
+    c = nc;
+    path.push(cellAt(r, c));
+  }
+  return { direction, requested: distance, path, blocked, landing: cellAt(r, c) };
+}
+
+const cellAt = (r, c) => ({ r, c });
+
+/**
+ * Draw the ghost queen and her stepping stones. Redrawn from scratch on every
+ * staking gesture, which is cheap: it is at most a dozen empty divs.
+ */
+function renderGhost(view, overlay) {
+  for (const node of $$('.ghost-queen, .ghost-step', overlay)) node.remove();
+  if (!planningAllowed(view)) return;
+
+  const proj = soloProjection(view);
+  if (!proj || !proj.path.length) return;
+
+  const castle = view.you.castlePosition;
+  const onCastle = proj.landing.r === castle.r && proj.landing.c === castle.c;
+
+  proj.path.slice(0, -1).forEach((p) => {
+    const dot = el('div', 'marker ghost-step');
+    dot.style.setProperty('--dir', dirVar(proj.direction));
+    placeMarker(dot, p);
+    overlay.appendChild(dot);
+  });
+
+  const ghost = el('div', 'marker ghost-queen', ART.queen());
+  ghost.style.setProperty('--dir', dirVar(proj.direction));
+  if (onCastle) ghost.classList.add('on-castle');
+  if (proj.blocked) ghost.classList.add('blocked');
+  ghost.appendChild(
+    el(
+      'span',
+      'ghost-label num',
+      onCastle ? 'WIN' : proj.blocked ? `${proj.path.length} · wall` : String(proj.path.length)
+    )
+  );
+  placeMarker(ghost, proj.landing);
+  ghost.title = onCastle
+    ? 'Unopposed, this lands her on your castle'
+    : 'Where she lands if nobody pulls against you';
+  overlay.appendChild(ghost);
+}
+
+const clearTug = () => {
+  const t = $('#tug');
+  if (t) {
+    t.innerHTML = '';
+    t.hidden = true;
+  }
+};
+
+/**
+ * The tug-of-war readout. One rope per contested axis: the knot sits where the
+ * two sides balance, so a glance shows who is winning and by how much. This is
+ * the round's public aggregate — it never says WHO pulled, only how hard the
+ * table pulled each way.
+ */
+function renderTug(res, myBid) {
+  const tug = $('#tug');
+  if (!tug) return;
+  const totals = res.totals || {};
+  const mine = myBid || {};
+  const anyCoins = DIRECTIONS.some((d) => (totals[d] || 0) > 0);
+
+  let verdict;
+  if (!anyCoins) {
+    verdict = 'Nobody spent a coin. The queen stands still.';
+  } else if (res.tie) {
+    verdict = 'The pulls cancel exactly. She holds her ground.';
+  } else if (res.blockedByBoundary) {
+    verdict =
+      `<b>${DIR_ARROW[res.direction]} ${res.requestedDistance}</b> wins, but the wall stops her after ` +
+      `<b>${res.actualDistance}</b>. ${res.requestedDistance - res.actualDistance} wasted.`;
+  } else {
+    /**
+     * Only the single strongest survivor moves her; the other axis is thrown
+     * away entirely. That rule is invisible in play and costs people coins
+     * they never understand losing, so name the beaten direction out loud.
+     */
+    const surviving = res.surviving || netOf(totals).surviving;
+    const runnerUp = DIRECTIONS.filter((d) => d !== res.direction && (surviving[d] || 0) > 0).sort(
+      (a, b) => surviving[b] - surviving[a]
+    )[0];
+    const cells = `<b>${res.actualDistance}</b> ${res.actualDistance === 1 ? 'cell' : 'cells'}`;
+    verdict = runnerUp
+      ? `<b>${DIR_ARROW[res.direction]} ${res.requestedDistance}</b> beats ` +
+        `<b>${DIR_ARROW[runnerUp]} ${surviving[runnerUp]}</b>, so she travels ${cells}. ` +
+        `The weaker pull is discarded.`
+      : `<b>${DIR_ARROW[res.direction]} ${res.requestedDistance}</b> survives, so she travels ${cells}.`;
+  }
+
+  const ropes = AXES.filter(({ a, b }) => (totals[a] || 0) + (totals[b] || 0) > 0)
+    .map(({ a, b }) => {
+      const ta = totals[a] || 0;
+      const tb = totals[b] || 0;
+      const share = (ta / (ta + tb)) * 100;
+      const winner = ta === tb ? null : ta > tb ? a : b;
+      const survives = Math.abs(ta - tb);
+      const you = (d) => ((mine[d] || 0) > 0 ? `<em>· you ${mine[d]}</em>` : '');
+      return `
+        <div class="rope">
+          <span class="end end-a ${winner === a ? 'won' : ''}" style="--dir:${dirVar(a)}">
+            <i>${DIR_ARROW[a]}</i><b class="num">${ta}</b>${you(a)}
+          </span>
+          <span class="rope-bar" style="--a:${dirVar(a)};--b:${dirVar(b)};--share:${share}%">
+            <span class="knot"></span>
+          </span>
+          <span class="end end-b ${winner === b ? 'won' : ''}" style="--dir:${dirVar(b)}">
+            ${you(b)}<b class="num">${tb}</b><i>${DIR_ARROW[b]}</i>
+          </span>
+          <span class="survives">${winner ? `${DIR_ARROW[winner]} ${survives}` : 'cancelled'}</span>
+        </div>`;
+    })
+    .join('');
+
+  tug.innerHTML = `<div class="tug-verdict">${verdict}</div>${ropes}`;
+  tug.hidden = false;
+}
 
 /* ------------------------------------------------------------------ *
  * Board construction
@@ -4647,8 +4703,10 @@ function mountGame(game, seat) {
   $('#board-overlay').innerHTML = '';
   $('#path-layer').innerHTML = '';
   $('#pregame').hidden = true;
+  clearTug();
   app.lastBalance = null;
   app.placements = [];
+  app.stagedBid = null;
   app.started = true;
   app.animating = false;
 
@@ -4715,9 +4773,14 @@ function renderRoomSeats(lobby, mySeat = 0) {
     chip.dataset.seat = s.seat;
     chip.dataset.kind = s.kind;
     const open = s.kind !== 'human';
+    // 'pending' means the host has not answered yet, so we do not know who is
+    // in that seat. Drawing a bot there told every invited player that all four
+    // seats were computers, which was simply untrue.
+    const unknown = s.kind === 'pending';
     // In humans-only mode an empty seat is a person who has not arrived yet,
     // so it shows a human outline rather than a bot.
-    chip.appendChild(el('span', 'avatar', open && !app.humansOnly ? ART.bot : ART.human));
+    chip.appendChild(el('span', 'avatar', open && !app.humansOnly && !unknown ? ART.bot : ART.human));
+    if (unknown) chip.classList.add('unknown');
     if (!open) {
       if (!previous.has('human' + s.seat)) chip.classList.add('joined');
     } else {
@@ -4727,9 +4790,12 @@ function renderRoomSeats(lobby, mySeat = 0) {
     if (s.seat === mySeat) chip.classList.add('is-you');
     chip.title = !open
       ? 'Player'
-      : app.humansOnly
-        ? 'Waiting for a player'
-        : "Open seat — one of the court's bots will play it";
+      : unknown
+        ? 'Waiting for the host'
+        : app.humansOnly
+          ? 'Waiting for a player'
+          : "Open seat — one of the court's bots will play it";
+    
     box.appendChild(chip);
   }
 }
@@ -4758,126 +4824,147 @@ function setLobbyMode(mode) {
 }
 
 /**
- * Open the start screen ready to host. A room is opened in the background so a
- * shared code works the moment it is handed over; if the relay is unreachable
- * the game still plays perfectly well against the computer.
+ * Enter a game — creating a new one, or joining a code somebody shared.
+ *
+ * Creating and joining are the same act now. The authoritative game lives on
+ * the server, so nobody's browser is special: the first player to arrive is
+ * simply granted the right to press Start, and the server says who that is.
+ * The old build had to fork here because one browser ran the engine for
+ * everybody else.
+ *
+ * There is deliberately no deadline. Gathering players takes minutes, not
+ * seconds: an invite may sit unread, a phone may be locked. The connection
+ * stays open indefinitely, reports the stage actually reached, and never flips
+ * the player somewhere they did not ask to go.
  */
-async function prepareHostLobby() {
-  app.online = true;
-  app.isHost = true;
-  showCode(randomCode());
-  setLobbyMode('host');
-  $('#room-status').classList.remove('error');
-  app.lobby = soloLobby();
-  refreshLobbyState();
+/** How long to wait for the lobby before giving up and playing the computer. */
+const LOBBY_TIMEOUT_MS = 10000;
 
+async function enterRoom(code) {
   leaveRoom();
-  if (app.host) app.host.dispose();
-  app.host = newLocalHost(app.code);
-  refreshLobbyState();
 
-  if (!multiplayerSupported()) return;
-
-  try {
-    app.net = await openRoom({
-      code: app.code,
-      isHost: true,
-      onEvent: (e) => {
-        // The authoritative seating signal is the joiner's greeting, handled
-        // inside the bridge. This is a backup for peers that connect quietly.
-        if (e.type === 'peer-join') {
-          const seat = app.bridge?.admit(e.peerId);
-          if (seat !== null && seat !== undefined) sound.play('join');
-        }
-        if (e.type === 'peer-leave') app.bridge?.release(e.peerId);
-      },
-    });
-    app.bridge = attachHostToRoom({
-      net: app.net,
-      host: app.host,
-      humansOnly: app.humansOnly,
-      onLobbyChange: (lobby) => {
-        app.lobby = lobby;
-        refreshLobbyState();
-      },
-      onEvent: (e) => {
-        if (e.type === 'peer-seated') sound.play('join');
-        if (e.type === 'peer-returned') toast('A player reconnected.', 'gold');
-        if (e.type === 'peer-covered') toast('A player dropped. The court covers their seat.');
-        if (e.type === 'peer-retired') toast('A player left the game.');
-        if (e.type === 'abandoned') {
-          toast('Not enough players remain. The game is over.', 'bad');
-          setTimeout(leaveToTitle, 2200);
-        }
-      },
-    });
-  } catch {
-    $('#room-status').textContent =
-      "Online play is unavailable. You can still play against the court's bots.";
-    $('#room-status').classList.add('error');
-  }
-}
-
-/** Someone opened a shared link or typed a code. */
-async function prepareJoinLobby(code) {
   app.online = true;
   app.isHost = false;
+  app.lobby = null;
   showCode(code);
   setLobbyMode('join');
   $('#room-status').classList.remove('error');
-  $('#room-status').textContent = 'Finding your game…';
-  renderRoomSeats({ seats: [0, 1, 2, 3].map((seat) => ({ seat, kind: 'bot' })) }, -1);
+  $('#room-status').textContent = 'Connecting…';
 
-  leaveRoom();
+  // Until the server answers we do not know who is at the table. Unknown seats
+  // are drawn as outlines, never as bots — telling a player that all four
+  // seats are computers when we have not yet asked is simply untrue.
+  renderRoomSeats(
+    { seats: [{ seat: 0, kind: 'pending' }, ...[1, 2, 3].map((seat) => ({ seat, kind: 'pending' }))] },
+    -1
+  );
 
-  let seated = false;
-  /** If the host never answers, say so rather than spinning forever. */
-  const giveUp = setTimeout(() => {
-    if (seated) return;
-    $('#room-status').textContent = 'Game not found. Check the code or start a new game.';
-    $('#room-status').classList.add('error');
-    setLobbyMode('host');
-  }, 20000);
-  app.joinTimer = giveUp;
-
-  try {
-    app.net = await openRoom({ code, isHost: false, onEvent: () => {} });
-  } catch {
-    clearTimeout(giveUp);
-    $('#room-status').textContent = "Online play is unavailable. You can still play against the court's bots.";
-    $('#room-status').classList.add('error');
-    setLobbyMode('host');
+  if (!multiplayerSupported()) {
+    goOffline('This browser cannot play online. You can still play against the court’s bots.');
     return;
   }
 
-  $('#room-status').textContent = 'Connected. Looking for the host…';
+  let seated = false;
 
-  const remote = createRemoteGame({
-    net: app.net,
+  const remote = connectRoom({
+    code,
+
     onLobby: (lobby) => {
-      if (!seated) {
-        seated = true;
-        clearTimeout(giveUp);
-        sound.play('join');
-      }
+      // The server answered, so the solo fallback is no longer needed.
+      clearTimeout(app.joinTimer);
+      app.joinTimer = null;
       app.lobby = lobby;
       app.humansOnly = !!lobby.humansOnly;
+      app.isHost = !!lobby.admin;
+      $('#chk-humans-only').checked = app.humansOnly;
       $('#room-status').classList.remove('error');
-      $('#room-status').textContent = lobby.humansOnly
-        ? "You're in. Humans only — waiting for the host…"
-        : "You're in. Waiting for the host…";
-      renderRoomSeats(lobby, remote.getSeat?.() ?? -1);
+
+      if (lobby.inProgress) {
+        $('#room-status').textContent =
+          'That game has already started. Ask for a new code, or start your own board.';
+        setLobbyMode('join');
+        renderRoomSeats(lobby, -1);
+        return;
+      }
+
+      const mySeat = Number.isInteger(lobby.yourSeat) ? lobby.yourSeat : -1;
+      app.seat = mySeat;
+
+      if (!seated && mySeat >= 0) {
+        seated = true;
+        sound.play('join');
+      }
+
+      // Whoever may press Start sees the host controls. That is decided by the
+      // server, not by which browser happened to generate the code.
+      setLobbyMode(lobby.admin ? 'host' : 'join');
+      renderRoomSeats(lobby, mySeat);
+      refreshLobbyState();
+    },
+
+    onEvent: (e) => {
+      if (e.type === 'error' && e.message) toast(e.message, 'bad');
     },
   });
+
   app.game = remote;
 
+  /**
+   * If the server never answers, fall back to playing the computer rather than
+   * leaving a first-time player stranded on "Connecting…" with no Start
+   * button. `multiplayerSupported()` only catches a browser with no WebSocket
+   * at all; it cannot catch a cold worker, a captive portal, a corporate proxy
+   * or a phone that has just lost signal, and net.js retries forever by
+   * design. Solo play needs no server, so nobody should have to wait for one.
+   */
+  clearTimeout(app.joinTimer);
+  app.joinTimer = setTimeout(() => {
+    if (app.lobby || !app.online) return;
+    remote.dispose?.();
+    if (app.game === remote) app.game = null;
+    goOffline('Could not reach the game server. You can still play against the court’s bots.');
+  }, LOBBY_TIMEOUT_MS);
+
+  /**
+   * The game mounts on the first view that arrives, whoever started it. Both
+   * players take this same path now — there is no local branch for the player
+   * who created the room.
+   */
   const unsub = remote.subscribe(() => {
     if (remote.getView() && $('#screen-game').hidden) {
       unsub();
-      clearTimeout(giveUp);
+      sound.stopTheme();
       mountGame(remote, remote.getSeat());
     }
   });
+}
+
+/** Creating a game is entering a room nobody is in yet. */
+async function prepareHostLobby() {
+  await enterRoom(randomCode());
+}
+
+/** Joining is entering a room somebody else already opened. */
+async function prepareJoinLobby(code) {
+  await enterRoom(code);
+}
+
+/**
+ * The network is unavailable. Solo play against the computer needs no server
+ * at all, so the game stays perfectly playable — it just cannot be shared.
+ */
+function goOffline(message) {
+  clearTimeout(app.joinTimer);
+  app.joinTimer = null;
+  app.online = false;
+  app.isHost = true;
+  app.lobby = soloLobby();
+  if (app.host) app.host.dispose();
+  app.host = newLocalHost(app.code);
+  setLobbyMode('host');
+  $('#room-status').textContent = message;
+  $('#room-status').classList.add('error');
+  refreshLobbyState();
 }
 
 /**
@@ -4893,29 +4980,43 @@ async function prepareJoinLobby(code) {
  * to happen before `start()`, because castles and treasures are dealt at
  * construction time.
  */
+/**
+ * Start is pressed.
+ *
+ * Online, this is a request, not an action: the server builds the game,
+ * chooses the seating and deals the castles, then sends everyone their view.
+ * We mount when that view arrives, exactly like every other player — which is
+ * why there is no local host to construct, no roster to compact and no seats to
+ * renumber here any more. The server does all of it, once, for everybody.
+ *
+ * Offline, there is nobody else to co-ordinate with, so a local host is built
+ * and the game plays against the computer as it always has.
+ */
 function startTheGame() {
   if ($('#btn-room-start').disabled) return;
   sound.unlock();
   sound.stopTheme();
   sound.play('press');
 
-  if (app.humansOnly) {
-    const roster = app.bridge ? app.bridge.compactSeats() : [null];
-    if (roster.length < 2) {
+  if (app.online && app.game?.isRemote) {
+    if (!app.game.isAdmin()) {
+      sound.play('deny');
+      toast('Only the player who opened this game can start it.', 'bad');
+      return;
+    }
+    const humans = (app.lobby?.seats || []).filter((s) => s.kind === 'human').length;
+    if (app.humansOnly && humans < 2) {
       sound.play('deny');
       toast('A humans-only game needs at least two players.', 'bad');
       return;
     }
-    app.host?.dispose();
-    // Every seat is a person. No AI is constructed, so none can take over.
-    app.host = newLocalHost(app.code, [...roster.keys()], roster.length);
-    app.bridge?.rebind(app.host);
-  } else if (!app.host) {
-    app.host = newLocalHost(app.code);
+    $('#room-status').textContent = 'Dealing the board…';
+    app.game.startGame();
+    return;
   }
 
+  if (!app.host) app.host = newLocalHost(app.code);
   app.host.start();
-  app.bridge?.markStarted();
   mountGame(wrapLocal(app.host, 0), 0);
 }
 
@@ -4930,6 +5031,7 @@ function onHostEvent(evt) {
       break;
     case 'round-open':
       app.animating = false;
+      app.stagedBid = null;
       sound.play('roundStart');
       render();
       break;
@@ -5046,6 +5148,10 @@ function renderMarkers(view) {
 
   const queen = ensureQueen(overlay);
   if (!app.animating) placeMarker(queen, view.queenPosition);
+
+  // Where your own coins alone would take her. Teaches "coins are distance"
+  // without a word of instruction.
+  renderGhost(view, overlay);
 
   // Tapping the queen commits the round. With nothing staked, that is a pass.
   const armed = planningAllowed(view);
@@ -5292,6 +5398,7 @@ function commitBid(bid, { added, removed } = {}) {
     if (i >= 0) app.placements.splice(i, 1);
     sound.play('coinRemove');
   }
+  app.stagedBid = { ...bid };
   render();
 }
 
@@ -5323,6 +5430,12 @@ async function playResolution() {
 
   const view = app.game.getView();
   const status = $('#status');
+  const myBid = app.stagedBid;
+
+  // Last round's readout belongs to last round. The preview belongs to a bid
+  // that has now been spent.
+  clearTug();
+  for (const node of $$('.ghost-queen, .ghost-step', $('#board-overlay'))) node.remove();
 
   // Clear the staked coins from the board now that they are spent.
   renderTargets({ ...view, you: { ...view.you, currentBid: { UP: 0, DOWN: 0, LEFT: 0, RIGHT: 0 } } });
@@ -5343,6 +5456,33 @@ async function playResolution() {
   }
 
   if (!alive()) return;
+
+  // The round is now legible: what was pulled, what cancelled, what survived.
+  renderTug(res, myBid);
+
+  /**
+   * Walking over a castle is not the same as finishing on one, and that is the
+   * single rule players most often discover by losing to it. Say it out loud
+   * the first time it happens to them. Only this seat's own castle is checked,
+   * so nothing about anybody else's board is revealed.
+   */
+  const castle = view.you.castlePosition;
+  const passedOver =
+    res.winner === null &&
+    res.path.length > 1 &&
+    res.path.slice(0, -1).some((p) => p.r === castle.r && p.c === castle.c);
+  if (passedOver) {
+    const mark = $('.castle-mark', $('#board-overlay'));
+    if (mark) {
+      mark.classList.remove('near-miss');
+      void mark.offsetWidth;
+      mark.classList.add('near-miss');
+    }
+    sound.play('deny');
+    toast('She walked straight over your castle. She has to FINISH on it.', 'bad');
+    await wait(500);
+  }
+
   if (view.lastResolution?.yourBonusCollected) {
     const claimed = $('.bonus-mark', $('#board-overlay'));
     if (claimed) claimed.classList.add('claimed');
@@ -5781,8 +5921,9 @@ function boot() {
   $('#btn-room-invite').onclick = () => inviteOthers(app.code);
   $('#chk-humans-only').onchange = (e) => {
     app.humansOnly = e.target.checked;
-    // The bridge decides what happens when somebody drops, so it has to know.
-    app.bridge?.setHumansOnly(app.humansOnly);
+    // The server decides what happens when somebody drops, and it owns the
+    // setting for everyone at the table, so it has to be told.
+    app.game?.setHumansOnly?.(app.humansOnly);
     refreshLobbyState();
   };
   $('#btn-room-newboard').onclick = () => {
@@ -5814,10 +5955,15 @@ function boot() {
 
   // ---- join modal ----
   $('#btn-join-go').onclick = () => {
-    const raw = $('#join-input').value.trim().toUpperCase();
-    if (!raw) return;
+    const code = normaliseCode($('#join-input').value);
+    if (!code) return;
+    if (!/^[A-Z0-9]{6}$/.test(code)) {
+      sound.play('deny');
+      toast('A game code is six letters and numbers.', 'bad');
+      return;
+    }
     closeModals();
-    prepareJoinLobby(raw.startsWith('QT-') ? raw : `QT-${raw}`);
+    prepareJoinLobby(code);
   };
   $('#join-input').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') $('#btn-join-go').click();
@@ -5879,13 +6025,21 @@ function boot() {
 
   showScreen('screen-title');
   const joinCode = params.get('game');
-  if (joinCode) prepareJoinLobby(joinCode.toUpperCase());
+  if (joinCode) prepareJoinLobby(normaliseCode(joinCode));
   else prepareHostLobby();
 }
 
 /** Share a ready-made invitation rather than a bare URL. */
 async function inviteOthers(code) {
-  const text = `Join my game of Queen's Tug — four hidden castles, one wandering queen. Tap to take a seat:`;
+  /**
+   * The code is written into the message as well as into the link. Link
+   * previews fail for all sorts of reasons outside our control — a stripped
+   * URL, a chat app that does not unfurl, a forwarded screenshot — and when
+   * they do, a visible code still lets somebody in through "Join with a code".
+   */
+  const text =
+    `Join my game of Queen's Tug — four hidden castles, one wandering queen.\n` +
+    `Tap to take a seat, or enter code ${code}:`;
   const url = inviteUrl(code);
   try {
     if (navigator.share) {
@@ -5924,10 +6078,15 @@ async function copyLink(code) {
 function leaveRoom() {
   if (app.joinTimer) clearTimeout(app.joinTimer);
   app.joinTimer = null;
-  app.bridge?.dispose();
-  app.net?.leave();
-  app.bridge = null;
-  app.net = null;
+  if (app.joinWatch) clearInterval(app.joinWatch);
+  app.joinWatch = null;
+  // Only tear down a lobby connection here. A mounted game owns its own
+  // connection and is disposed by leaveToTitle.
+  if (app.online && app.game?.isRemote && !app.started) {
+    app.game.sayGoodbye?.();
+    app.game.dispose?.();
+    app.game = null;
+  }
   app.online = false;
 }
 
@@ -5942,7 +6101,10 @@ function leaveToTitle() {
   app.unsub?.();
   app.game?.dispose?.();
   app.game = null;
+  app.host?.dispose?.();
+  app.host = null;
   app.started = false;
+  app.online = false;
   showScreen('screen-title');
   prepareHostLobby();
 }
