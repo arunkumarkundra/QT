@@ -12,7 +12,7 @@
  */
 
 import { createHost } from './host.js';
-import { DIRECTIONS, OPPOSITE, SEAT_COLORS, UI_TIMING, CONTROL_MODE, setPacing } from './config.js';
+import { DIRECTIONS, OPPOSITE, VECTORS, SEAT_COLORS, UI_TIMING, CONTROL_MODE, setPacing } from './config.js';
 import { sound } from './sound.js';
 import { connectRoom, multiplayerSupported } from './net.js';
 
@@ -174,6 +174,13 @@ const app = {
   seat: 0,
   /** Order coins were placed, so a single undo is always possible. */
   placements: [],
+  /**
+   * The bid this seat had on the board when the round closed. The view clears
+   * `currentBid` the moment the round resolves, so the readout would otherwise
+   * have no way to tell you what YOUR share of the tug was. Captured on every
+   * staking gesture, so it is correct even when the timer locks for you.
+   */
+  stagedBid: null,
   /** Bumped whenever a game is mounted or torn down; in-flight animations
    *  belonging to an older generation abandon themselves. */
   epoch: 0,
@@ -233,6 +240,187 @@ function normaliseCode(raw) {
 }
 
 const inviteUrl = (code) => `${location.origin}${location.pathname}?game=${encodeURIComponent(code)}`;
+
+/* ------------------------------------------------------------------ *
+ * Reading a round
+ *
+ * Three things a new player could not previously work out:
+ *   1. that the number of coins IS the distance travelled,
+ *   2. what happened to the coins they spent,
+ *   3. that passing over a castle is not the same as landing on it.
+ *
+ * All three are answered here, and all three are answered from information
+ * this seat already legitimately holds. The landing preview uses nothing but
+ * your own staged bid; the tug readout uses `lastResolution.totals`, which
+ * §5.1 makes public and which playerView.js already sends to every seat. No
+ * hidden field is read, so the information boundary is untouched.
+ * ------------------------------------------------------------------ */
+
+const DIR_ARROW = { UP: '↑', DOWN: '↓', LEFT: '←', RIGHT: '→' };
+/** The two tug-of-war ropes. Each is a pair that cancels against itself. */
+const AXES = [
+  { a: 'UP', b: 'DOWN' },
+  { a: 'LEFT', b: 'RIGHT' },
+];
+
+/** Cancel a bid against itself and take the single strongest survivor. */
+function netOf(bid = {}) {
+  const vertical = (bid.UP || 0) - (bid.DOWN || 0);
+  const horizontal = (bid.RIGHT || 0) - (bid.LEFT || 0);
+  const surviving = {
+    UP: Math.max(0, vertical),
+    DOWN: Math.max(0, -vertical),
+    RIGHT: Math.max(0, horizontal),
+    LEFT: Math.max(0, -horizontal),
+  };
+  const best = Math.max(surviving.UP, surviving.DOWN, surviving.LEFT, surviving.RIGHT);
+  const winners = DIRECTIONS.filter((d) => surviving[d] === best && best > 0);
+  return { surviving, direction: winners.length === 1 ? winners[0] : null, distance: winners.length === 1 ? best : 0 };
+}
+
+/**
+ * Where the queen would finish if THIS SEAT were the only one pulling. It is
+ * a preview of your own intent, not a prediction of the round — the whole
+ * point of the game is that you cannot predict the round.
+ */
+function soloProjection(view) {
+  const { direction, distance } = netOf(view.you.currentBid);
+  if (!direction) return null;
+
+  const v = VECTORS[direction];
+  let { r, c } = view.queenPosition;
+  const path = [];
+  let blocked = false;
+  for (let i = 0; i < distance; i++) {
+    const nr = r + v.dr;
+    const nc = c + v.dc;
+    if (nr < 0 || nr >= view.board.height || nc < 0 || nc >= view.board.width) {
+      blocked = true;
+      break;
+    }
+    r = nr;
+    c = nc;
+    path.push(cellAt(r, c));
+  }
+  return { direction, requested: distance, path, blocked, landing: cellAt(r, c) };
+}
+
+const cellAt = (r, c) => ({ r, c });
+
+/**
+ * Draw the ghost queen and her stepping stones. Redrawn from scratch on every
+ * staking gesture, which is cheap: it is at most a dozen empty divs.
+ */
+function renderGhost(view, overlay) {
+  for (const node of $$('.ghost-queen, .ghost-step', overlay)) node.remove();
+  if (!planningAllowed(view)) return;
+
+  const proj = soloProjection(view);
+  if (!proj || !proj.path.length) return;
+
+  const castle = view.you.castlePosition;
+  const onCastle = proj.landing.r === castle.r && proj.landing.c === castle.c;
+
+  proj.path.slice(0, -1).forEach((p) => {
+    const dot = el('div', 'marker ghost-step');
+    dot.style.setProperty('--dir', dirVar(proj.direction));
+    placeMarker(dot, p);
+    overlay.appendChild(dot);
+  });
+
+  const ghost = el('div', 'marker ghost-queen', ART.queen());
+  ghost.style.setProperty('--dir', dirVar(proj.direction));
+  if (onCastle) ghost.classList.add('on-castle');
+  if (proj.blocked) ghost.classList.add('blocked');
+  ghost.appendChild(
+    el(
+      'span',
+      'ghost-label num',
+      onCastle ? 'WIN' : proj.blocked ? `${proj.path.length} · wall` : String(proj.path.length)
+    )
+  );
+  placeMarker(ghost, proj.landing);
+  ghost.title = onCastle
+    ? 'Unopposed, this lands her on your castle'
+    : 'Where she lands if nobody pulls against you';
+  overlay.appendChild(ghost);
+}
+
+const clearTug = () => {
+  const t = $('#tug');
+  if (t) {
+    t.innerHTML = '';
+    t.hidden = true;
+  }
+};
+
+/**
+ * The tug-of-war readout. One rope per contested axis: the knot sits where the
+ * two sides balance, so a glance shows who is winning and by how much. This is
+ * the round's public aggregate — it never says WHO pulled, only how hard the
+ * table pulled each way.
+ */
+function renderTug(res, myBid) {
+  const tug = $('#tug');
+  if (!tug) return;
+  const totals = res.totals || {};
+  const mine = myBid || {};
+  const anyCoins = DIRECTIONS.some((d) => (totals[d] || 0) > 0);
+
+  let verdict;
+  if (!anyCoins) {
+    verdict = 'Nobody spent a coin. The queen stands still.';
+  } else if (res.tie) {
+    verdict = 'The pulls cancel exactly. She holds her ground.';
+  } else if (res.blockedByBoundary) {
+    verdict =
+      `<b>${DIR_ARROW[res.direction]} ${res.requestedDistance}</b> wins, but the wall stops her after ` +
+      `<b>${res.actualDistance}</b>. ${res.requestedDistance - res.actualDistance} wasted.`;
+  } else {
+    /**
+     * Only the single strongest survivor moves her; the other axis is thrown
+     * away entirely. That rule is invisible in play and costs people coins
+     * they never understand losing, so name the beaten direction out loud.
+     */
+    const surviving = res.surviving || netOf(totals).surviving;
+    const runnerUp = DIRECTIONS.filter((d) => d !== res.direction && (surviving[d] || 0) > 0).sort(
+      (a, b) => surviving[b] - surviving[a]
+    )[0];
+    const cells = `<b>${res.actualDistance}</b> ${res.actualDistance === 1 ? 'cell' : 'cells'}`;
+    verdict = runnerUp
+      ? `<b>${DIR_ARROW[res.direction]} ${res.requestedDistance}</b> beats ` +
+        `<b>${DIR_ARROW[runnerUp]} ${surviving[runnerUp]}</b>, so she travels ${cells}. ` +
+        `The weaker pull is discarded.`
+      : `<b>${DIR_ARROW[res.direction]} ${res.requestedDistance}</b> survives, so she travels ${cells}.`;
+  }
+
+  const ropes = AXES.filter(({ a, b }) => (totals[a] || 0) + (totals[b] || 0) > 0)
+    .map(({ a, b }) => {
+      const ta = totals[a] || 0;
+      const tb = totals[b] || 0;
+      const share = (ta / (ta + tb)) * 100;
+      const winner = ta === tb ? null : ta > tb ? a : b;
+      const survives = Math.abs(ta - tb);
+      const you = (d) => ((mine[d] || 0) > 0 ? `<em>· you ${mine[d]}</em>` : '');
+      return `
+        <div class="rope">
+          <span class="end end-a ${winner === a ? 'won' : ''}" style="--dir:${dirVar(a)}">
+            <i>${DIR_ARROW[a]}</i><b class="num">${ta}</b>${you(a)}
+          </span>
+          <span class="rope-bar" style="--a:${dirVar(a)};--b:${dirVar(b)};--share:${share}%">
+            <span class="knot"></span>
+          </span>
+          <span class="end end-b ${winner === b ? 'won' : ''}" style="--dir:${dirVar(b)}">
+            ${you(b)}<b class="num">${tb}</b><i>${DIR_ARROW[b]}</i>
+          </span>
+          <span class="survives">${winner ? `${DIR_ARROW[winner]} ${survives}` : 'cancelled'}</span>
+        </div>`;
+    })
+    .join('');
+
+  tug.innerHTML = `<div class="tug-verdict">${verdict}</div>${ropes}`;
+  tug.hidden = false;
+}
 
 /* ------------------------------------------------------------------ *
  * Board construction
@@ -311,8 +499,10 @@ function mountGame(game, seat) {
   $('#board-overlay').innerHTML = '';
   $('#path-layer').innerHTML = '';
   $('#pregame').hidden = true;
+  clearTug();
   app.lastBalance = null;
   app.placements = [];
+  app.stagedBid = null;
   app.started = true;
   app.animating = false;
 
@@ -443,6 +633,9 @@ function setLobbyMode(mode) {
  * stays open indefinitely, reports the stage actually reached, and never flips
  * the player somewhere they did not ask to go.
  */
+/** How long to wait for the lobby before giving up and playing the computer. */
+const LOBBY_TIMEOUT_MS = 10000;
+
 async function enterRoom(code) {
   leaveRoom();
 
@@ -473,6 +666,9 @@ async function enterRoom(code) {
     code,
 
     onLobby: (lobby) => {
+      // The server answered, so the solo fallback is no longer needed.
+      clearTimeout(app.joinTimer);
+      app.joinTimer = null;
       app.lobby = lobby;
       app.humansOnly = !!lobby.humansOnly;
       app.isHost = !!lobby.admin;
@@ -510,6 +706,22 @@ async function enterRoom(code) {
   app.game = remote;
 
   /**
+   * If the server never answers, fall back to playing the computer rather than
+   * leaving a first-time player stranded on "Connecting…" with no Start
+   * button. `multiplayerSupported()` only catches a browser with no WebSocket
+   * at all; it cannot catch a cold worker, a captive portal, a corporate proxy
+   * or a phone that has just lost signal, and net.js retries forever by
+   * design. Solo play needs no server, so nobody should have to wait for one.
+   */
+  clearTimeout(app.joinTimer);
+  app.joinTimer = setTimeout(() => {
+    if (app.lobby || !app.online) return;
+    remote.dispose?.();
+    if (app.game === remote) app.game = null;
+    goOffline('Could not reach the game server. You can still play against the court’s bots.');
+  }, LOBBY_TIMEOUT_MS);
+
+  /**
    * The game mounts on the first view that arrives, whoever started it. Both
    * players take this same path now — there is no local branch for the player
    * who created the room.
@@ -538,6 +750,8 @@ async function prepareJoinLobby(code) {
  * at all, so the game stays perfectly playable — it just cannot be shared.
  */
 function goOffline(message) {
+  clearTimeout(app.joinTimer);
+  app.joinTimer = null;
   app.online = false;
   app.isHost = true;
   app.lobby = soloLobby();
@@ -613,6 +827,7 @@ function onHostEvent(evt) {
       break;
     case 'round-open':
       app.animating = false;
+      app.stagedBid = null;
       sound.play('roundStart');
       render();
       break;
@@ -729,6 +944,10 @@ function renderMarkers(view) {
 
   const queen = ensureQueen(overlay);
   if (!app.animating) placeMarker(queen, view.queenPosition);
+
+  // Where your own coins alone would take her. Teaches "coins are distance"
+  // without a word of instruction.
+  renderGhost(view, overlay);
 
   // Tapping the queen commits the round. With nothing staked, that is a pass.
   const armed = planningAllowed(view);
@@ -975,6 +1194,7 @@ function commitBid(bid, { added, removed } = {}) {
     if (i >= 0) app.placements.splice(i, 1);
     sound.play('coinRemove');
   }
+  app.stagedBid = { ...bid };
   render();
 }
 
@@ -1006,6 +1226,12 @@ async function playResolution() {
 
   const view = app.game.getView();
   const status = $('#status');
+  const myBid = app.stagedBid;
+
+  // Last round's readout belongs to last round. The preview belongs to a bid
+  // that has now been spent.
+  clearTug();
+  for (const node of $$('.ghost-queen, .ghost-step', $('#board-overlay'))) node.remove();
 
   // Clear the staked coins from the board now that they are spent.
   renderTargets({ ...view, you: { ...view.you, currentBid: { UP: 0, DOWN: 0, LEFT: 0, RIGHT: 0 } } });
@@ -1026,6 +1252,33 @@ async function playResolution() {
   }
 
   if (!alive()) return;
+
+  // The round is now legible: what was pulled, what cancelled, what survived.
+  renderTug(res, myBid);
+
+  /**
+   * Walking over a castle is not the same as finishing on one, and that is the
+   * single rule players most often discover by losing to it. Say it out loud
+   * the first time it happens to them. Only this seat's own castle is checked,
+   * so nothing about anybody else's board is revealed.
+   */
+  const castle = view.you.castlePosition;
+  const passedOver =
+    res.winner === null &&
+    res.path.length > 1 &&
+    res.path.slice(0, -1).some((p) => p.r === castle.r && p.c === castle.c);
+  if (passedOver) {
+    const mark = $('.castle-mark', $('#board-overlay'));
+    if (mark) {
+      mark.classList.remove('near-miss');
+      void mark.offsetWidth;
+      mark.classList.add('near-miss');
+    }
+    sound.play('deny');
+    toast('She walked straight over your castle. She has to FINISH on it.', 'bad');
+    await wait(500);
+  }
+
   if (view.lastResolution?.yourBonusCollected) {
     const claimed = $('.bonus-mark', $('#board-overlay'));
     if (claimed) claimed.classList.add('claimed');
