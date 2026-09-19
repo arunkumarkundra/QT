@@ -72,21 +72,16 @@ const normaliseCode = (raw) => (raw || '').toUpperCase().replace(/^QT-/, '').tri
  * here worth stealing: the server holds no accounts, no payment details and no
  * personal data, and a forged connection can do no more than play a game.
  *
- * ADD YOUR OWN ORIGINS HERE if you ever move the site.
+ * THIS LIST MUST MATCH THE REPOSITORY'S `CNAME` FILE.
  *
- * THE LIST MUST INCLUDE WHATEVER IS IN THE REPOSITORY'S `CNAME` FILE.
- * A custom domain on GitHub Pages changes the Origin the browser sends, and
- * an origin that is missing here is refused with a 403 at the handshake. The
- * page then retries forever without ever reaching the lobby, which looks to a
- * player exactly like the server being down. `CNAME` currently reads
- * `qt.pi3.in`; the github.io address is kept so the project page still works.
+ * A custom domain on GitHub Pages changes the Origin the browser sends, and an
+ * origin that is missing here is refused with a 403 at the handshake. The page
+ * then retries forever without reaching the lobby, which looks to a player
+ * exactly like the server being down. If `CNAME` ever changes, or is removed
+ * so the site falls back to its github.io address, change this list in the
+ * same commit or online play stops the moment the worker redeploys.
  */
-const ALLOWED_ORIGINS = [
-  'https://qt.pi3.in',
-  'https://arunkumarkundra.github.io',
-  'http://localhost:8080',
-  'http://127.0.0.1:8080',
-];
+const ALLOWED_ORIGINS = ['https://qt.pi3.in'];
 
 /** A frame larger than this is not a bid; it is someone probing. */
 const MAX_FRAME_BYTES = 4096;
