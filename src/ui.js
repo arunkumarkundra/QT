@@ -346,12 +346,17 @@ function renderGhost(view, overlay) {
   overlay.appendChild(ghost);
 }
 
+/**
+ * Before the first round, and between games. The panel stays in the layout
+ * holding its own height rather than being hidden: if it appeared only once
+ * the first round resolved, the board above would resize at that moment.
+ */
 const clearTug = () => {
   const t = $('#tug');
-  if (t) {
-    t.innerHTML = '';
-    t.hidden = true;
-  }
+  if (!t) return;
+  t.hidden = false;
+  t.classList.add('empty');
+  t.innerHTML = '<div class="tug-empty">No moves yet. Stake coins on a direction, then lock in.</div>';
 };
 
 /**
@@ -496,6 +501,7 @@ function renderTug(res, myBid, { nearMiss = false } = {}) {
     ? `<div class="tug-moment">She crossed your castle without stopping — she must <b>finish</b> on it.</div>`
     : '';
 
+  tug.classList.remove('empty');
   tug.innerHTML = `${compass}
     <div class="tug-say">
       <div class="tug-headline"><span class="eyebrow">Last move</span>${headline}</div>
