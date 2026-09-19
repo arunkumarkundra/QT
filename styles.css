@@ -352,7 +352,7 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--gold-l
 /* Carved stone frame with a struck-gold inlay, as on the key art. */
 .board-plate {
   position: relative;
-  width: min(100%, calc(100vh - 240px));
+  width: min(100%, calc(100vh - 310px));
   aspect-ratio: 1;
   max-height: 100%;
   padding: 13px;
@@ -660,6 +660,160 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--gold-l
 @keyframes gain { 0% { color: var(--ok); transform: scale(1.3); } 100% { color: var(--gold-lt); } }
 
 
+/* ==========================================================================
+   READING A ROUND
+   The landing preview, and the tug-of-war readout underneath the board.
+   ========================================================================== */
+
+/* --- landing preview: where YOUR coins alone would take her --- */
+
+.ghost-queen { z-index: 6; opacity: .5; }
+.ghost-queen svg {
+  width: 72%; height: 72%;
+  opacity: .5;
+  filter: grayscale(.4) drop-shadow(0 0 5px rgba(255, 220, 140, .45));
+}
+.ghost-queen::before {
+  content: '';
+  position: absolute; inset: 8%;
+  border-radius: 50%;
+  border: 1.5px dashed color-mix(in srgb, var(--dir) 75%, transparent);
+  animation: ghost-breathe 1.9s ease-in-out infinite;
+}
+@keyframes ghost-breathe {
+  0%, 100% { opacity: .45; transform: scale(.94); }
+  50% { opacity: .95; transform: scale(1.04); }
+}
+.ghost-queen .ghost-label {
+  position: absolute;
+  bottom: -6%;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: rgba(7, 10, 15, .88);
+  border: 1px solid color-mix(in srgb, var(--dir) 65%, transparent);
+  color: var(--silver);
+  font-size: clamp(8px, 2cqw, 12px);
+  font-weight: 700;
+  line-height: 1.5;
+  white-space: nowrap;
+  z-index: 3;
+}
+/* Unopposed, this bid wins the game. Worth shouting about. */
+.ghost-queen.on-castle { opacity: 1; }
+.ghost-queen.on-castle svg { opacity: .9; filter: drop-shadow(0 0 10px var(--gold)); }
+.ghost-queen.on-castle::before { border-color: var(--gold-lt); border-style: solid; }
+.ghost-queen.on-castle .ghost-label {
+  border-color: var(--gold);
+  color: var(--gold-lt);
+  letter-spacing: .08em;
+}
+.ghost-queen.blocked .ghost-label { border-color: var(--danger); color: #ffb0b2; }
+
+/* The cells she would pass through, which do NOT count as landings. */
+.ghost-step { z-index: 3; }
+.ghost-step::after {
+  content: '';
+  width: 16%; height: 16%;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--dir) 70%, transparent);
+  opacity: .55;
+}
+
+/* --- the tug-of-war readout --- */
+
+.tug {
+  flex: none;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 5px 8px;
+  border-radius: var(--r-md);
+  background: rgba(13, 17, 25, .72);
+  border: 1px solid var(--line-soft);
+  animation: verdict-in .3s ease both;
+}
+.tug-verdict {
+  text-align: center;
+  font-size: 13px;
+  color: var(--silver-dim);
+  line-height: 1.35;
+}
+.tug-verdict b { color: var(--gold-lt); font-weight: 600; }
+
+.rope {
+  display: grid;
+  grid-template-columns: minmax(58px, auto) 1fr minmax(58px, auto) 52px;
+  align-items: center;
+  gap: 7px;
+}
+.rope .end {
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.rope .end-b { justify-content: flex-end; }
+.rope .end i { font-style: normal; color: var(--dir); font-size: 13px; }
+.rope .end b { font-size: 13px; color: var(--silver-dim); }
+.rope .end em { font-style: normal; font-size: 10.5px; color: var(--gold); }
+.rope .end.won b { color: var(--silver); }
+
+/**
+ * The rope itself. The knot sits where the two sides balance, so its distance
+ * from the centre IS the surviving force. Nothing here is computed in CSS that
+ * the engine did not already decide.
+ */
+.rope-bar {
+  position: relative;
+  height: 7px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: linear-gradient(
+    to right,
+    color-mix(in srgb, var(--a) 60%, transparent) 0 var(--share),
+    color-mix(in srgb, var(--b) 60%, transparent) var(--share) 100%
+  );
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .45);
+}
+.rope-bar .knot {
+  position: absolute;
+  top: -2px; bottom: -2px;
+  left: var(--share);
+  width: 3px;
+  margin-left: -1.5px;
+  border-radius: 2px;
+  background: var(--gold-lt);
+  box-shadow: 0 0 5px rgba(247, 221, 160, .85);
+  transition: left .5s cubic-bezier(.22, 1, .36, 1);
+}
+/* The centre mark: where the rope would sit if the two sides were equal. */
+.rope-bar::after {
+  content: '';
+  position: absolute;
+  left: 50%; top: 0; bottom: 0;
+  width: 1px;
+  background: rgba(219, 227, 239, .3);
+}
+.rope .survives {
+  text-align: right;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--gold);
+  white-space: nowrap;
+}
+
+/* Near miss: the queen crossed this castle without stopping on it. */
+.castle-mark.near-miss svg { animation: near-miss 1.1s ease-out 2; }
+@keyframes near-miss {
+  0%, 100% { transform: none; filter: drop-shadow(0 0 8px currentColor); }
+  25% { transform: translateX(-9%) scale(1.15); filter: drop-shadow(0 0 14px #fff); }
+  75% { transform: translateX(9%) scale(1.15); filter: drop-shadow(0 0 14px #fff); }
+}
+
 /* --- status line --- */
 
 .status {
@@ -825,6 +979,12 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--gold-l
   .brand { font-size: 11px; letter-spacing: .16em; }
   .btn { padding: 12px 18px; }
   .status { font-size: 13.5px; min-height: 30px; }
+  .tug { padding: 4px 6px; gap: 2px; }
+  .tug-verdict { font-size: 12px; }
+  .rope { grid-template-columns: minmax(50px, auto) 1fr minmax(50px, auto) 44px; gap: 5px; }
+  .rope .end, .rope .end b, .rope .end i { font-size: 11.5px; }
+  .rope .end em { font-size: 9.5px; }
+  .rope .survives { font-size: 10px; }
   .result-stats { gap: 13px; font-size: 12px; }
 }
 

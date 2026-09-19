@@ -25,7 +25,13 @@ const MODULE_ORDER = [
   'src/ai.js',
   'src/sound.js',
   'src/host.js',
-  'src/multiplayer.js',
+  /**
+   * `src/net.js` is the live transport. `src/multiplayer.js` is the older
+   * peer-to-peer one, which nothing in src/, worker/ or index.html imports any
+   * more — bundling both collided on a shared constant, and bundling neither
+   * left `connectRoom` undefined, which is why the built file could not boot.
+   */
+  'src/net.js',
   'src/ui.js',
 ];
 
