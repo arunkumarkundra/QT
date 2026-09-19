@@ -726,6 +726,7 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--gold-l
   width: 100%;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 14px;
   /* Locked height: the compass sets it, so the board above can never shift
      between a quiet round and a busy one. */
@@ -837,12 +838,32 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--gold-l
 /* --- the sentence beside it --- */
 
 .tug-say {
-  flex: 1;
+  /**
+   * A fixed basis, not `flex: 1`. The group is centred in the panel, and a
+   * text column that sized itself to its content would drag the compass
+   * sideways on every round as the wording changed. It shrinks below this on
+   * a narrow screen, where the panel is full anyway.
+   */
+  flex: 0 1 460px;
   min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 2px;
   text-align: left;
+}
+/**
+ * Says which round this is about. Inline with the headline rather than on its
+ * own line, so naming it costs no height and the panel never grows.
+ */
+.tug-say .eyebrow {
+  margin-right: 8px;
+  font-family: var(--ui);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--gold-dk);
+  white-space: nowrap;
 }
 .tug-headline {
   font-family: var(--display);
@@ -1040,6 +1061,8 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--gold-l
   .btn { padding: 12px 18px; }
   .status { font-size: 13.5px; min-height: 30px; }
   .tug { padding: 6px 8px; gap: 10px; min-height: 73px; }
+  .tug-say { flex: 1 1 auto; }
+  .tug-say .eyebrow { margin-right: 6px; font-size: 9px; letter-spacing: .1em; }
   .tug-compass { --arm-w: 44px; --arm-h: 19px; }
   .tug-hub svg { width: 15px; }
   .arm-text, .arm-text i { font-size: 11px; }
