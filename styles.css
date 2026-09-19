@@ -352,7 +352,13 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--gold-l
 /* Carved stone frame with a struck-gold inlay, as on the key art. */
 .board-plate {
   position: relative;
-  width: min(100%, calc(100vh - 330px));
+  /**
+   * Deliberately conservative. When this width is the binding constraint the
+   * board is a constant size; when `max-height: 100%` binds instead, the board
+   * resizes with whatever space the panels below happen to leave. Subtracting
+   * a little more than the chrome actually needs keeps the width in charge.
+   */
+  width: min(100%, calc(100vh - 350px));
   aspect-ratio: 1;
   max-height: 100%;
   padding: 13px;
@@ -728,9 +734,15 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--gold-l
   align-items: center;
   justify-content: center;
   gap: 14px;
-  /* Locked height: the compass sets it, so the board above can never shift
-     between a quiet round and a busy one. */
-  min-height: 81px;
+  /**
+   * A FIXED height, never a minimum. `min-height` still let the panel grow
+   * whenever the wording ran to an extra line, and every pixel it grew came
+   * out of the board above — which, being centred and square, then resized
+   * AND moved. The lines inside are clamped to match, so nothing can push
+   * past this.
+   */
+  height: 90px;
+  overflow: hidden;
   padding: 7px 12px;
   border-radius: var(--r-md);
   background: rgba(13, 17, 25, .72);
@@ -868,14 +880,29 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--gold-l
 .tug-headline {
   font-family: var(--display);
   font-size: 14px;
+  line-height: 1.25;
   letter-spacing: .03em;
   color: var(--silver);
 }
 .tug-headline b { color: var(--gold-lt); font-weight: 700; }
+
+/* Before the first round resolves. The panel is always present, so that the
+   board never resizes the moment the first readout arrives. */
+.tug.empty { justify-content: center; animation: none; }
+.tug-empty {
+  font-size: 12.5px;
+  color: var(--muted);
+  text-align: center;
+}
 .tug-math {
   font-size: 11.5px;
   color: var(--muted);
   line-height: 1.45;
+  /* Two lines at most. The compass still shows every number regardless. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 .tug-math b { color: var(--silver-dim); font-weight: 600; }
 .tug-math .yours { color: var(--gold); }
@@ -884,6 +911,10 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--gold-l
   font-size: 11.5px;
   color: #ffb0b2;
   line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 .tug-moment b { color: #fff; font-weight: 700; }
 
@@ -899,12 +930,16 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--gold-l
 
 .status {
   flex: none;
-  min-height: 40px;
+  /* Fixed, for the same reason as the readout: the prompt changes every
+     round, and a prompt that wraps to two lines used to shrink the board. */
+  height: 42px;
+  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
   text-align: center;
   font-size: 14.5px;
+  line-height: 1.3;
   color: var(--silver-dim);
   width: 100%;
   padding: 0 4px;
@@ -1059,8 +1094,8 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--gold-l
   .seat-group { gap: 6px; }
   .brand { font-size: 11px; letter-spacing: .16em; }
   .btn { padding: 12px 18px; }
-  .status { font-size: 13.5px; min-height: 30px; }
-  .tug { padding: 6px 8px; gap: 10px; min-height: 73px; }
+  .status { font-size: 13.5px; height: 38px; }
+  .tug { padding: 6px 8px; gap: 10px; height: 80px; }
   .tug-say { flex: 1 1 auto; }
   .tug-say .eyebrow { margin-right: 6px; font-size: 9px; letter-spacing: .1em; }
   .tug-compass { --arm-w: 44px; --arm-h: 19px; }
