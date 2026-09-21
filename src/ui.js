@@ -80,17 +80,24 @@ const ART = {
    * thin gold rim so it belongs to the same treasury as the coins.
    */
   cannonball: () => {
-    const g = uid('cb');
+    const body = uid('cb');
+    const sheen = uid('cs');
     return `<svg viewBox="0 0 40 40" aria-hidden="true">
     <defs>
-      <radialGradient id="${g}" cx="34%" cy="30%" r="75%">
-        <stop offset="0" stop-color="#8d97a8"/><stop offset=".28" stop-color="#4a5262"/><stop offset=".75" stop-color="#1c2029"/><stop offset="1" stop-color="#0b0d12"/>
+      <radialGradient id="${body}" cx="38%" cy="34%" r="70%">
+        <stop offset="0" stop-color="#5b6170"/><stop offset=".35" stop-color="#2a2e37"/><stop offset=".8" stop-color="#101217"/><stop offset="1" stop-color="#050608"/>
+      </radialGradient>
+      <radialGradient id="${sheen}" cx="50%" cy="50%" r="50%">
+        <stop offset="0" stop-color="#fff" stop-opacity=".95"/><stop offset=".45" stop-color="#dfe6f2" stop-opacity=".5"/><stop offset="1" stop-color="#dfe6f2" stop-opacity="0"/>
       </radialGradient>
     </defs>
-    <circle cx="20" cy="20.6" r="17.6" fill="rgba(0,0,0,.45)"/>
-    <circle cx="20" cy="19.4" r="17" fill="url(#${g})" stroke="#b58a2c" stroke-width="1.2"/>
-    <ellipse cx="13.6" cy="12.6" rx="4.6" ry="3" fill="rgba(255,255,255,.34)" transform="rotate(-32 13.6 12.6)"/>
-    <path d="M9 27.5a14 14 0 0 0 19.5 3.2" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="1.4" stroke-linecap="round"/>
+    <ellipse cx="20" cy="37" rx="13" ry="2.6" fill="rgba(0,0,0,.55)"/>
+    <circle cx="20" cy="19.5" r="16.5" fill="url(#${body})"/>
+    <path d="M6.2 24.5a14.8 14.8 0 0 0 26.9 1.4" fill="none" stroke="rgba(170,185,210,.35)" stroke-width="1.6" stroke-linecap="round"/>
+    <path d="M4.6 17.4c4.2 2.4 9.8 3.6 15.4 3.6s11.2-1.2 15.4-3.6" fill="none" stroke="rgba(0,0,0,.5)" stroke-width="1.1"/>
+    <path d="M4.8 18.4c4.2 2.4 9.8 3.6 15.2 3.6s11-1.2 15.2-3.6" fill="none" stroke="rgba(255,255,255,.08)" stroke-width=".8"/>
+    <ellipse cx="13.2" cy="11.8" rx="5.6" ry="4" fill="url(#${sheen})" transform="rotate(-35 13.2 11.8)"/>
+    <circle cx="12.4" cy="11.2" r="1.5" fill="#fff"/>
   </svg>`;
   },
 
@@ -1556,7 +1563,11 @@ function paintAimCells(view) {
   }
 }
 
-/** The rack: one iron ball per cannonball, spent ones as empty sockets. */
+/**
+ * Your cannonballs, beside your coins: one iron ball and how many are left.
+ * The ball itself is the handle — drag it onto the board, or tap it and then
+ * tap a cell. A ball aimed this round is already counted as gone.
+ */
 function renderAmmo(view) {
   const rack = $('#ammo');
   if (!rack) return;
@@ -1568,29 +1579,31 @@ function renderAmmo(view) {
   rack.hidden = false;
   const left = view.you.cannonballs ?? 0;
   const aimed = !!view.you.currentBid?.shot;
+  const ready = Math.max(0, left - (aimed ? 1 : 0));
   const armed = canAim(view);
-  rack.classList.toggle('armed', armed);
+  rack.classList.toggle('armed', armed && ready > 0);
   rack.classList.toggle('aiming', app.aiming && armed);
+  rack.classList.toggle('empty', ready === 0);
   rack.classList.toggle('fallen', !!view.you.eliminated);
+  rack.dataset.ready = String(ready);
 
-  const key = `${total}|${left}|${aimed}`;
-  if (rack.dataset.key !== key) {
-    rack.dataset.key = key;
-    rack.innerHTML = '';
-    for (let i = 0; i < total; i++) {
-      // Balls are used from the right, so the rack empties toward its start.
-      const state = i >= left ? 'spent' : aimed && i === left - 1 ? 'aimed' : 'ready';
-      const ball = el('span', `ammo-ball ${state}`, state === 'spent' ? '' : ART.cannonball());
-      rack.appendChild(ball);
-    }
+  if (!rack.firstChild) {
+    rack.innerHTML = `<span class="ammo-ball">${ART.cannonball()}</span><span class="ammo-count num"></span>`;
   }
-  const ready = left - (aimed ? 1 : 0);
+  const count = $('.ammo-count', rack);
+  if (count.textContent !== String(ready)) {
+    count.textContent = String(ready);
+    count.classList.remove('bump');
+    void count.offsetWidth;
+    count.classList.add('bump');
+  }
+
   rack.title = view.you.eliminated
     ? 'Your castle has fallen'
     : left === 0
     ? 'No cannonballs left'
     : aimed
-    ? 'Aimed for this round — tap the ball on the board to take it back'
+    ? `Aimed for this round (${ready} left after it) — tap the ball on the board to take it back`
     : armed
     ? `${ready} cannonball${ready === 1 ? '' : 's'} left. Drag one onto a cell, or tap here then tap a cell. One per round.`
     : `${ready} cannonball${ready === 1 ? '' : 's'} left`;
@@ -1628,7 +1641,8 @@ function renderShotMark(view, overlay) {
 function beginAimDrag(e, from) {
   const view = app.game?.getView();
   if (!canAim(view)) return;
-  if (from === 'rack' && !e.target.closest('.ammo-ball.ready, .ammo-ball.aimed')) return;
+  // An aimed ball can still be re-aimed from the rack; an empty rack cannot.
+  if (from === 'rack' && !(Number($('#ammo').dataset.ready) > 0 || view.you.currentBid?.shot)) return;
   e.preventDefault();
   const ghost = el('div', 'drag-ball', ART.cannonball());
   ghost.hidden = true;

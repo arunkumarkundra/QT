@@ -77,7 +77,7 @@ export const DEFAULT_CONFIG = {
    * lands before the queen moves: it destroys a castle (that player is out)
    * or a treasure on the target cell, and leaves a permanent crater.
    */
-  cannonballsPerPlayer: 3,
+  cannonballsPerPlayer: 5,
 
   /** §3 — No game time limit. §26 forbids introducing one. */
   gameTimeLimitMs: null,

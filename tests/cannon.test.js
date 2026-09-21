@@ -3,7 +3,7 @@
  *
  *   node tests/cannon.test.js
  *
- * Three cannonballs a game, at most one a round, fired in secret and landing
+ * Five cannonballs a game, at most one a round, fired in secret and landing
  * before the queen moves. A struck castle knocks its owner out; a struck
  * treasure becomes a ghost that is replaced only when it would have run out;
  * every struck cell is a permanent crater. Last castle standing wins.
@@ -75,11 +75,11 @@ const shot = (r, c, coins = {}) => ({ ...emptyBid(), ...coins, shot: { r, c } })
 
 console.log('\n\x1b[1mAiming\x1b[0m');
 
-test('Each player starts with three cannonballs, visible only to themselves', () => {
+test('Each player starts with five cannonballs, visible only to themselves', () => {
   const s = board();
   const v = createPlayerView(s, 0);
-  eq(v.you.cannonballs, 3);
-  eq(v.config.cannonballsPerPlayer, 3);
+  eq(v.you.cannonballs, 5);
+  eq(v.config.cannonballsPerPlayer, 5);
   for (const o of v.opponents) assert(!('cannonballs' in o), 'A rival cannonball count would name the shooter');
 });
 
@@ -125,7 +125,7 @@ console.log('\n\x1b[1mImpact\x1b[0m');
 test('A miss leaves a crater and spends one ball', () => {
   const { state, resolution } = play(board(), { 0: shot(6, 6) });
   eq(state.craters, [cell(6, 6)]);
-  eq(state.cannonballs, [2, 3, 3, 3]);
+  eq(state.cannonballs, [4, 5, 5, 5]);
   eq(resolution.explosions, [{ position: cell(6, 6), castleSeat: null }]);
 });
 
@@ -133,7 +133,7 @@ test('Two balls on one cell make one crater, and both are spent', () => {
   const { state, resolution } = play(board(), { 0: shot(6, 6), 1: shot(6, 6) });
   eq(state.craters.length, 1);
   eq(resolution.explosions.length, 1);
-  eq(state.cannonballs, [2, 2, 3, 3]);
+  eq(state.cannonballs, [4, 4, 5, 5]);
 });
 
 test('A struck castle knocks its owner out, publicly', () => {

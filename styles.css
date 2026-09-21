@@ -996,54 +996,48 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--gold-l
    CANNON FIRE
    ========================================================================== */
 
-/* --- the rack: your cannonballs, in the top bar --- */
+/* --- your cannonballs: one ball and a count, inside the purse --- */
 
 .ammo {
   display: flex;
   align-items: center;
-  gap: 3px;
-  padding: 4px 9px;
-  border-radius: 99px;
-  background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(0,0,0,.34));
-  border: 1px solid var(--line);
-  flex: none;
-  transition: border-color .2s, box-shadow .2s, opacity .2s;
+  gap: 5px;
+  margin-left: 3px;
+  padding: 0 2px 0 9px;
+  border-left: 1px solid var(--line);
   user-select: none;
   -webkit-user-select: none;
+  transition: opacity .2s, filter .2s;
 }
 .ammo[hidden] { display: none; }
 .ammo-ball {
-  position: relative;
-  width: 24px;
-  height: 24px;
+  width: 26px;
+  height: 26px;
   flex: none;
   border-radius: 50%;
-  transition: transform .15s, opacity .2s;
+  transition: transform .15s;
 }
-.ammo-ball svg { width: 100%; height: 100%; display: block; }
-/* A fired ball leaves an empty socket in the rack. */
-.ammo-ball.spent {
-  width: 20px; height: 20px; margin: 2px;
-  background: radial-gradient(circle at 50% 60%, rgba(0,0,0,.65), rgba(0,0,0,.25));
-  box-shadow: inset 0 1px 3px rgba(0,0,0,.8), 0 0 0 1px rgba(150,178,220,.12);
+.ammo-ball svg { width: 100%; height: 100%; display: block; overflow: visible; }
+.ammo-count {
+  font-family: var(--mono);
+  font-size: 19px;
+  line-height: 1;
+  color: #c9d1de;
 }
-/* The ball aimed this round is out on the board, so its slot reads as lifted. */
-.ammo-ball.aimed { opacity: .28; }
+.ammo-count.bump { animation: ammo-bump .4s ease; }
+@keyframes ammo-bump { 0% { transform: scale(1.3); color: var(--gold-lt); } 100% { transform: none; } }
 
-.ammo.armed {
-  border-color: color-mix(in srgb, var(--gold) 45%, var(--line));
-  touch-action: none;
+.ammo.armed { touch-action: none; cursor: grab; }
+.ammo.armed:hover .ammo-ball { transform: translateY(-2px) scale(1.08); }
+.ammo.armed:active { cursor: grabbing; }
+/* Tap-to-aim is on: the ball lifts and glows until a cell is chosen. */
+.ammo.aiming .ammo-ball {
+  animation: ammo-ready 1s ease-in-out infinite;
+  filter: drop-shadow(0 0 6px rgba(255, 170, 80, .85));
 }
-.ammo.armed .ammo-ball.ready { cursor: grab; }
-.ammo.armed .ammo-ball.ready:hover { transform: translateY(-2px) scale(1.08); }
-.ammo.armed:active .ammo-ball.ready { cursor: grabbing; }
-.ammo.aiming {
-  border-color: var(--gold);
-  box-shadow: 0 0 0 1px rgba(217,164,65,.35), 0 0 12px rgba(217,164,65,.4);
-}
-.ammo.aiming .ammo-ball.ready:last-of-type,
-.ammo.aiming .ammo-ball.ready { animation: ammo-ready 1s ease-in-out infinite; }
-@keyframes ammo-ready { 50% { transform: translateY(-2px); } }
+@keyframes ammo-ready { 50% { transform: translateY(-3px); } }
+.ammo.empty .ammo-ball { opacity: .3; filter: grayscale(1); }
+.ammo.empty .ammo-count { color: var(--muted); }
 .ammo.fallen { opacity: .35; filter: grayscale(1); }
 
 /* The ball under your finger or pointer while dragging. */
@@ -1189,13 +1183,12 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--gold-l
 }
 
 @media (max-width: 620px) {
-  .ammo { padding: 3px 7px; gap: 2px; }
-  .ammo-ball { width: 20px; height: 20px; }
-  .ammo-ball.spent { width: 16px; height: 16px; }
+  .ammo { gap: 4px; padding-left: 7px; margin-left: 2px; }
+  .ammo-ball { width: 23px; height: 23px; }
+  .ammo-count { font-size: 17px; }
 }
-
 @media (prefers-reduced-motion: reduce) {
-  .shot-mark .crosshair, .ammo.aiming .ammo-ball.ready { animation: none; }
+  .shot-mark .crosshair, .ammo.aiming .ammo-ball { animation: none; }
   .board-plate.shake { animation: none; }
 }
 
@@ -1556,3 +1549,27 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--gold-l
    must read as neither an active player nor a bot. */
 .seat-chip.retired { opacity: .32; filter: grayscale(1); }
 .seat-chip.retired .lock-badge { display: none; }
+
+/* Narrow phones: coins, cannonballs, four players and the timer share one row. */
+@media (max-width: 400px) {
+  .seat-strip { gap: 4px; }
+  .seat-group { gap: 4px; }
+  .seat-chip { width: 38px; height: 38px; }
+  .seat-chip .avatar { width: 22px; height: 22px; }
+  .seat-chip .lock-badge { width: 14px; height: 14px; }
+  .seat-chip.is-you::after { inset: -4px; }
+  .timer { width: 40px; height: 40px; }
+  .purse { padding: 4px 7px 4px 4px; gap: 4px; }
+  .purse .coin-icon, .ammo-ball { width: 21px; height: 21px; }
+  .purse .value, .ammo-count { font-size: 15px; }
+  .ammo { padding-left: 5px; margin-left: 1px; gap: 3px; }
+}
+@media (max-width: 340px) {
+  .seat-strip, .seat-group { gap: 3px; }
+  .seat-chip { width: 34px; height: 34px; }
+  .seat-chip .avatar { width: 20px; height: 20px; }
+  .seat-chip .lock-badge { width: 13px; height: 13px; }
+  .timer { width: 36px; height: 36px; }
+  .purse .coin-icon, .ammo-ball { width: 19px; height: 19px; }
+  .purse .value, .ammo-count { font-size: 14px; }
+}
