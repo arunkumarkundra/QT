@@ -347,6 +347,12 @@ function renderGhost(view, overlay) {
 }
 
 /**
+ * The readout's frame: a carved stone cartouche with a gold plaque naming it.
+ * Drawn by both states below so the title never blinks between rounds.
+ */
+const TUG_TITLE = '<span class="tug-title">The Last Tug</span>';
+
+/**
  * Before the first round, and between games. The panel stays in the layout
  * holding its own height rather than being hidden: if it appeared only once
  * the first round resolved, the board above would resize at that moment.
@@ -356,18 +362,23 @@ const clearTug = () => {
   if (!t) return;
   t.hidden = false;
   t.classList.add('empty');
-  t.innerHTML = '<div class="tug-empty">No moves yet. Stake coins on a direction, then lock in.</div>';
+  t.innerHTML = `${TUG_TITLE}<div class="tug-empty">No moves yet. Stake coins on a direction, then lock in.</div>`;
 };
 
 /**
- * The round, read back as a compass.
+ * The round, read back as a compass — a picture, not a paragraph.
  *
  * The four arms sit exactly where the four stakeable cells sit on the board,
- * so the readout is a picture of the thing the player just tapped rather than
- * an abstract chart. Arm length is the coins pulled that way; the winning arm
- * is lit, a fully-cancelled arm is struck through, and the surviving-but-
- * weaker arm is marked discarded, which is the rule that most often costs
- * people coins without their noticing.
+ * so the readout is a picture of the thing the player just tapped. Each arm is
+ * a bar growing out of the queen: its length and number are the coins pulled
+ * that way, and the hatched part nearest the queen is your own share. The hub is
+ * the queen herself and shows the outcome: which way she went and how far,
+ * with a red bar when a wall stopped her short.
+ *
+ *   lit gold arm  the pull that moved her
+ *   dashed arm    equal survivors, so she held her ground
+ *   struck arm    survived cancelling but was weaker, so it was thrown away
+ *   faded arm     wiped out by the opposite pull
  *
  * Everything here is `lastResolution.totals`, which §5.1 makes public and
  * which playerView.js already sends to every seat. No hidden field is read.
@@ -381,6 +392,13 @@ function renderTug(res, myBid, { nearMiss = false } = {}) {
   const surviving = res.surviving || netOf(totals).surviving;
   const spent = DIRECTIONS.reduce((s, d) => s + (totals[d] || 0), 0);
   const peak = Math.max(1, ...DIRECTIONS.map((d) => totals[d] || 0));
+  /**
+   * Your share can never exceed what was pulled that way. If a remembered bid
+   * ever disagrees with the public totals, trust the totals rather than draw
+   * coins that were not there.
+   */
+  const yoursOn = (d) => Math.min(mine[d] || 0, totals[d] || 0);
+  const youStaked = DIRECTIONS.some((d) => yoursOn(d) > 0);
 
   const winner = res.tie ? null : res.direction;
   /** Equal survivors: nobody wins, so none of them may be drawn as a loser. */
@@ -392,123 +410,113 @@ function renderTug(res, myBid, { nearMiss = false } = {}) {
       )[0]
     : null;
 
-  /* ---- the compass ---- */
+  const pct = (n) => `${Math.round(n * 1000) / 10}%`;
+
+  /* ---- the arms ---- */
 
   const arm = (d) => {
     const total = totals[d] || 0;
-    const yours = mine[d] || 0;
+    const yours = yoursOn(d);
     const cls = ['arm', `arm-${DIR_WORD[d]}`];
-    if (d === winner) cls.push('won');
-    else if (tied.includes(d)) cls.push('tied');
-    else if (d === discarded) cls.push('discarded');
-    else if (total > 0 && (surviving[d] || 0) === 0) cls.push('cancelled');
+    let fate = '';
+    if (d === winner) {
+      cls.push('won');
+      fate = ' — this pull moved her';
+    } else if (tied.includes(d)) {
+      cls.push('tied');
+      fate = ' — equal to another pull, so neither won';
+    } else if (d === discarded) {
+      cls.push('discarded');
+      fate = ' — weaker than the winning pull, so it was discarded';
+    } else if (total > 0 && (surviving[d] || 0) === 0) {
+      cls.push('cancelled');
+      fate = ' — cancelled by the opposite pull';
+    }
     if (total === 0) cls.push('idle');
     if (yours > 0) cls.push('mine');
 
     const title =
       total === 0
-        ? `Nothing was pulled ${DIR_WORD[d]}`
-        : `${total} pulled ${DIR_WORD[d]}${yours ? `, ${yours} of it yours` : ''}`;
+        ? `Nobody pulled ${DIR_WORD[d]}`
+        : `${total} ${total === 1 ? 'coin' : 'coins'} pulled ${DIR_WORD[d]}${
+            yours ? ` (${yours} of them yours)` : ''
+          }${fate}`;
 
-    const pct = (n) => `${Math.round(n * 1000) / 10}%`;
     return `<span class="${cls.join(' ')}" style="--dir:${dirVar(d)};--fill:${pct(total / peak)};--you:${pct(
-      total ? yours / total : 0
+      yours / peak
     )}" title="${title}">
         <span class="arm-fill"></span>
-        <span class="arm-text"><i>${DIR_ARROW[d]}</i><b class="num">${total}</b></span>
         <span class="arm-you"></span>
+        <span class="arm-text"><i>${DIR_ARROW[d]}</i><b class="num">${total}</b></span>
       </span>`;
   };
 
-  const compass = `<div class="tug-compass" aria-hidden="true">
-      ${DIRECTIONS.map(arm).join('')}
-      <span class="tug-hub">${ART.crown}</span>
-    </div>`;
+  /* ---- the hub: where she went ---- */
 
-  /* ---- the sentence ---- */
-
-  let headline;
-  if (spent === 0) headline = 'Nobody spent a coin.';
-  else if (res.tie) headline = 'The pulls cancel. She holds her ground.';
-  else
-    headline = `She moves <b>${res.actualDistance} ${DIR_WORD[res.direction]}</b>${
-      res.blockedByBoundary ? ' and hits the wall' : ''
-    }.`;
-
-  /**
-   * One short line of arithmetic, in the order the engine applies it: cancel
-   * the opposite pair, then throw away everything but the strongest survivor.
-   */
-  const notes = [];
-  if (spent > 0) {
-    /**
-     * Cancellation is reported for EVERY contested axis, not just the winning
-     * one. A player whose coins were cancelled on the losing axis is exactly
-     * the player who cannot work out where their money went.
-     */
-    for (const { a, b } of AXES) {
-      const ta = totals[a] || 0;
-      const tb = totals[b] || 0;
-      if (ta === 0 || tb === 0) continue;
-      const survivor = surviving[a] > 0 ? a : surviving[b] > 0 ? b : null;
-      notes.push(
-        survivor
-          ? `${DIR_ARROW[a]}${ta} − ${DIR_ARROW[b]}${tb} = <b>${DIR_ARROW[survivor]}${surviving[survivor]}</b>`
-          : `${DIR_ARROW[a]}${ta} − ${DIR_ARROW[b]}${tb} = <b>nothing</b>`
-      );
-    }
-
-    if (winner) {
-      if (discarded) notes.push(`${DIR_ARROW[discarded]}${surviving[discarded]} <b>discarded</b>, weaker`);
-      if (res.blockedByBoundary) notes.push(`${res.requestedDistance - res.actualDistance} lost to the wall`);
-    } else if (tied.length > 1) {
-      // Two survivors of equal strength. Neither is weaker, so neither wins.
-      notes.push(`${tied.map((d) => `${DIR_ARROW[d]}${surviving[d]}`).join(' and ')} are <b>equal</b>`);
-    }
-
-    /**
-     * Three clauses is the most that fits on one line on a phone. When a round
-     * is busy enough to need more, the cancellation the player was personally
-     * part of is the one worth keeping — the compass still shows every number.
-     */
-    if (notes.length + 1 > 3) {
-      const cancels = notes.filter((n) => n.includes('−'));
-      if (cancels.length > 1) {
-        const keep = cancels.find((n) =>
-          DIRECTIONS.some((d) => (mine[d] || 0) > 0 && n.includes(DIR_ARROW[d]))
-        );
-        for (const c of cancels) {
-          if (c !== (keep || cancels[0])) notes.splice(notes.indexOf(c), 1);
-        }
-      }
-    }
-
-    /**
-     * Where your own coins ended up. If they went on a pull that lost, saying
-     * so is the whole lesson of the round; the gold rule under that arm shows
-     * the same thing at a glance.
-     */
-    const onWinner = winner ? mine[winner] || 0 : 0;
-    if (onWinner > 0) {
-      notes.push(`<span class="yours">you pulled ${onWinner}</span>`);
-    } else {
-      const spentOn = DIRECTIONS.filter((d) => (mine[d] || 0) > 0).sort((a, b) => mine[b] - mine[a])[0];
-      if (spentOn) notes.push(`<span class="yours">your ${mine[spentOn]} went ${DIR_ARROW[spentOn]}</span>`);
-    }
+  let hubCls = 'tug-hub';
+  let hubMove = '';
+  let hubTitle;
+  if (spent === 0) {
+    hubCls += ' still';
+    hubTitle = 'Nobody spent a coin, so she stayed put';
+  } else if (!winner) {
+    hubCls += ' still';
+    hubMove = '<b class="num">0</b>';
+    hubTitle = 'The pulls cancelled out, so she held her ground';
+  } else {
+    hubMove = `<b class="move"><i>${DIR_ARROW[winner]}</i><span class="num">${res.actualDistance}</span>${
+      res.blockedByBoundary ? '<span class="wall"></span>' : ''
+    }</b>`;
+    hubTitle = `She moved ${res.actualDistance} ${DIR_WORD[winner]}${
+      res.blockedByBoundary ? `, stopped by the wall (${res.requestedDistance - res.actualDistance} lost)` : ''
+    }`;
   }
 
-  const moment = nearMiss
-    ? `<div class="tug-moment">She crossed your castle without stopping — she must <b>finish</b> on it.</div>`
+  const compass = `<div class="tug-compass">
+      ${DIRECTIONS.map(arm).join('')}
+      <span class="${hubCls}" title="${hubTitle}">${ART.crown}${hubMove}</span>
+    </div>`;
+
+  /**
+   * The only words left on the panel: a key for the hatching, shown when it
+   * appears, and — rarely — the rule people most often lose to without
+   * noticing. Both sit in the side margins so the compass never moves.
+   */
+  const key = youStaked
+    ? '<span class="tug-key" title="The hatched part of a bar is the coins you staked"><i></i>your coins</span>'
+    : '';
+  const miss = nearMiss
+    ? '<span class="tug-miss" title="She crossed your castle without stopping. She must finish her move on it.">passed your castle</span>'
     : '';
 
+  /** The compass is a picture; screen readers get the same round in words. */
+  const summary = [hubTitle + '.'];
+  for (const d of DIRECTIONS) if (totals[d]) summary.push(`${totals[d]} pulled ${DIR_WORD[d]}.`);
+  if (youStaked) {
+    const yours = DIRECTIONS.filter((d) => yoursOn(d) > 0).map((d) => `${yoursOn(d)} ${DIR_WORD[d]}`);
+    summary.push(`You staked ${yours.join(' and ')}.`);
+  }
+  if (nearMiss) summary.push('She crossed your castle without stopping on it.');
+
   tug.classList.remove('empty');
-  tug.innerHTML = `${compass}
-    <div class="tug-say">
-      <div class="tug-headline"><span class="eyebrow">Last move</span>${headline}</div>
-      ${notes.length ? `<div class="tug-math">${notes.join('<span class="dot">·</span>')}</div>` : ''}
-      ${moment}
-    </div>`;
+  tug.innerHTML = `${TUG_TITLE}${compass}${key}${miss}
+    <span class="sr-only">${summary.join(' ')}</span>`;
   tug.hidden = false;
+}
+
+/**
+ * The readout is never wider than the board. The board's size is decided by
+ * whichever of width or height binds, which CSS alone cannot hand to a
+ * sibling, so its measured width is passed down as a custom property.
+ */
+function trackBoardWidth() {
+  const plate = $('#screen-game .board-plate');
+  const tug = $('#tug');
+  if (!plate || !tug || typeof ResizeObserver === 'undefined') return;
+  new ResizeObserver(() => {
+    const w = plate.getBoundingClientRect().width;
+    if (w > 0) tug.style.setProperty('--plate-w', `${Math.round(w)}px`);
+  }).observe(plate);
 }
 
 /* ------------------------------------------------------------------ *
@@ -1350,6 +1358,12 @@ async function playResolution() {
   const view = app.game.getView();
   const status = $('#status');
   const myBid = app.stagedBid;
+  /**
+   * Spent now. Online, a view can carry a resolution and the next round in
+   * one message, so 'round-open' never fires to clear this — and last round's
+   * bid would then be reported as this round's. Clear it the moment it is used.
+   */
+  app.stagedBid = null;
 
   // Last round's readout belongs to last round. The preview belongs to a bid
   // that has now been spent.
@@ -1788,6 +1802,7 @@ const closeModals = () => $$('.modal').forEach((m) => (m.hidden = true));
  * ------------------------------------------------------------------ */
 
 function boot() {
+  trackBoardWidth();
   const params = new URLSearchParams(location.search);
   if (params.has('turbo')) {
     const f = Number(params.get('turbo'));
