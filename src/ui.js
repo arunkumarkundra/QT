@@ -47,6 +47,16 @@ const DIR_WORD = { UP: 'up', DOWN: 'down', LEFT: 'left', RIGHT: 'right' };
 let artSeq = 0;
 const uid = (prefix) => `${prefix}${(artSeq += 1)}`;
 
+/** Cast iron: dark and matte, lit from the top left. */
+const ironGradient = (id) => `<radialGradient id="${id}" cx="36%" cy="32%" r="78%">
+  <stop offset="0" stop-color="#6d7482"/><stop offset=".3" stop-color="#3a3f4a"/><stop offset=".78" stop-color="#16181e"/><stop offset="1" stop-color="#08090b"/>
+</radialGradient>`;
+
+/** One iron ball: body, a cold rim light underneath, a small highlight on top. */
+const ironBall = (cx, cy, r, gid) => `<circle cx="${cx}" cy="${cy}" r="${r}" fill="url(#${gid})" stroke="#050608" stroke-width="${(r / 10).toFixed(2)}"/>
+  <path d="M${cx - r * 0.72} ${cy + r * 0.45}a${r * 0.85} ${r * 0.85} 0 0 0 ${r * 1.4} ${r * 0.1}" stroke="#8793a8" stroke-opacity=".42" stroke-width="${(r / 9).toFixed(2)}" fill="none" stroke-linecap="round"/>
+  <circle cx="${cx - r * 0.38}" cy="${cy - r * 0.42}" r="${r * 0.22}" fill="#fff" fill-opacity=".6"/>`;
+
 const ART = {
   queen: () => {
     const g = uid('qg');
@@ -80,24 +90,24 @@ const ART = {
    * thin gold rim so it belongs to the same treasury as the coins.
    */
   cannonball: () => {
-    const body = uid('cb');
-    const sheen = uid('cs');
+    const g = uid('cb');
     return `<svg viewBox="0 0 40 40" aria-hidden="true">
-    <defs>
-      <radialGradient id="${body}" cx="38%" cy="34%" r="70%">
-        <stop offset="0" stop-color="#5b6170"/><stop offset=".35" stop-color="#2a2e37"/><stop offset=".8" stop-color="#101217"/><stop offset="1" stop-color="#050608"/>
-      </radialGradient>
-      <radialGradient id="${sheen}" cx="50%" cy="50%" r="50%">
-        <stop offset="0" stop-color="#fff" stop-opacity=".95"/><stop offset=".45" stop-color="#dfe6f2" stop-opacity=".5"/><stop offset="1" stop-color="#dfe6f2" stop-opacity="0"/>
-      </radialGradient>
-    </defs>
-    <ellipse cx="20" cy="37" rx="13" ry="2.6" fill="rgba(0,0,0,.55)"/>
-    <circle cx="20" cy="19.5" r="16.5" fill="url(#${body})"/>
-    <path d="M6.2 24.5a14.8 14.8 0 0 0 26.9 1.4" fill="none" stroke="rgba(170,185,210,.35)" stroke-width="1.6" stroke-linecap="round"/>
-    <path d="M4.6 17.4c4.2 2.4 9.8 3.6 15.4 3.6s11.2-1.2 15.4-3.6" fill="none" stroke="rgba(0,0,0,.5)" stroke-width="1.1"/>
-    <path d="M4.8 18.4c4.2 2.4 9.8 3.6 15.2 3.6s11-1.2 15.2-3.6" fill="none" stroke="rgba(255,255,255,.08)" stroke-width=".8"/>
-    <ellipse cx="13.2" cy="11.8" rx="5.6" ry="4" fill="url(#${sheen})" transform="rotate(-35 13.2 11.8)"/>
-    <circle cx="12.4" cy="11.2" r="1.5" fill="#fff"/>
+    <defs>${ironGradient(g)}</defs>
+    <ellipse cx="20" cy="36.5" rx="12" ry="2.5" fill="rgba(0,0,0,.6)"/>
+    ${ironBall(20, 20, 16, g)}
+  </svg>`;
+  },
+
+  /**
+   * Three cannonballs stacked in a pyramid — the shape everyone reads as
+   * "cannonballs" at a glance. Used wherever the game means your supply.
+   */
+  cannonStack: () => {
+    const g = uid('cs');
+    return `<svg viewBox="0 0 40 40" aria-hidden="true">
+    <defs>${ironGradient(g)}</defs>
+    <ellipse cx="20" cy="36.6" rx="17" ry="2.4" fill="rgba(0,0,0,.6)"/>
+    ${ironBall(11, 26.5, 9, g)}${ironBall(29, 26.5, 9, g)}${ironBall(20, 11.6, 9, g)}
   </svg>`;
   },
 
@@ -1588,7 +1598,7 @@ function renderAmmo(view) {
   rack.dataset.ready = String(ready);
 
   if (!rack.firstChild) {
-    rack.innerHTML = `<span class="ammo-ball">${ART.cannonball()}</span><span class="ammo-count num"></span>`;
+    rack.innerHTML = `<span class="ammo-ball">${ART.cannonStack()}</span><span class="ammo-count num"></span>`;
   }
   const count = $('.ammo-count', rack);
   if (count.textContent !== String(ready)) {

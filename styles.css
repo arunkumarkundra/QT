@@ -241,12 +241,19 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--gold-l
 /* --- top bar --- */
 
 .bar {
+  position: relative;
   height: var(--bar-h);
   flex: none;
   display: flex;
   align-items: center;
   gap: 10px;
   width: 100%;
+}
+/* The round's clock sits dead centre of the title row, whatever is either side. */
+.bar .timer {
+  position: absolute;
+  inset: 0;
+  margin: auto;
 }
 
 .brand {
@@ -1550,26 +1557,18 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--gold-l
 .seat-chip.retired { opacity: .32; filter: grayscale(1); }
 .seat-chip.retired .lock-badge { display: none; }
 
-/* Narrow phones: coins, cannonballs, four players and the timer share one row. */
+/* Narrow phones: coins, cannonballs and four players share one row. */
 @media (max-width: 400px) {
-  .seat-strip { gap: 4px; }
-  .seat-group { gap: 4px; }
-  .seat-chip { width: 38px; height: 38px; }
+  .bar .timer { width: 40px; height: 40px; }
+}
+@media (max-width: 350px) {
+  .seat-strip, .seat-group { gap: 4px; }
+  .seat-chip { width: 39px; height: 39px; }
   .seat-chip .avatar { width: 22px; height: 22px; }
   .seat-chip .lock-badge { width: 14px; height: 14px; }
   .seat-chip.is-you::after { inset: -4px; }
-  .timer { width: 40px; height: 40px; }
-  .purse { padding: 4px 7px 4px 4px; gap: 4px; }
-  .purse .coin-icon, .ammo-ball { width: 21px; height: 21px; }
+  .purse { padding: 4px 8px 4px 4px; gap: 5px; }
+  .purse .coin-icon, .ammo-ball { width: 22px; height: 22px; }
   .purse .value, .ammo-count { font-size: 15px; }
-  .ammo { padding-left: 5px; margin-left: 1px; gap: 3px; }
-}
-@media (max-width: 340px) {
-  .seat-strip, .seat-group { gap: 3px; }
-  .seat-chip { width: 34px; height: 34px; }
-  .seat-chip .avatar { width: 20px; height: 20px; }
-  .seat-chip .lock-badge { width: 13px; height: 13px; }
-  .timer { width: 36px; height: 36px; }
-  .purse .coin-icon, .ammo-ball { width: 19px; height: 19px; }
-  .purse .value, .ammo-count { font-size: 14px; }
+  .ammo { padding-left: 6px; gap: 3px; }
 }
