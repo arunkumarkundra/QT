@@ -2002,7 +2002,7 @@ function showResult() {
   const seat = reveal.winner;
   const line = $('#winner-line');
   if (seat === null || seat === undefined) {
-    // The last castles fell together. Nobody is left to take the throne.
+    // The last castles fell together. There is no castle left for her to reach.
     line.style.setProperty('--seat', 'var(--muted)');
     $('#winner-avatar').innerHTML = ART.crater();
     $('#winner-text').textContent = 'No castle stands. A draw.';
@@ -2010,12 +2010,21 @@ function showResult() {
     const winnerSeat = reveal.players[seat];
     line.style.setProperty('--seat', SEAT_COLORS[seat]);
     $('#winner-avatar').innerHTML = winnerSeat.controlMode === CONTROL_MODE.HUMAN ? ART.human : ART.bot;
+    /**
+     * Every ending says the same thing the game is about: the queen coming to
+     * a castle. The winner's icon sits beside the line, so "their" always has
+     * a face. A game settled by cannon fire says so, because the queen did
+     * not choose that castle — it was the only one left.
+     */
+    const lastStanding = !!reveal.roundLog?.at(-1)?.finale;
     $('#winner-text').textContent =
       seat === app.seat
-        ? 'Your queen has arrived. You win!'
-        : (reveal.eliminatedSeats || []).includes(app.seat)
-        ? 'Their castle outlasted yours.'
-        : 'Claims the throne!';
+        ? lastStanding
+          ? 'Yours is the last castle standing. You win!'
+          : 'The queen has come to your castle. You win!'
+        : lastStanding
+        ? 'Theirs is the last castle standing.'
+        : 'The queen has come to their castle.';
   }
 
   // Stats live in the bottom message strip, not in a panel of their own.

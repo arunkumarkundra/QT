@@ -1722,14 +1722,6 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--gold-l
 
       <div class="bar">
         <span class="brand">QUEEN'S TUG</span>
-        <!-- The round's clock, dead centre of the title row. -->
-        <div class="timer" id="timer">
-          <svg viewBox="0 0 44 44" aria-hidden="true">
-            <circle class="track" cx="22" cy="22" r="18" fill="none" stroke-width="3.5"></circle>
-            <circle class="fill" id="timer-fill" cx="22" cy="22" r="18" fill="none" stroke-width="3.5"></circle>
-          </svg>
-          <span class="digits num" id="timer-digits">20</span>
-        </div>
         <span class="bar-spacer"></span>
         <button class="btn btn-ghost btn-sm" id="btn-share">Share</button>
         <button class="btn btn-gold btn-sm" id="btn-again">Play again</button>
@@ -7006,7 +6998,7 @@ function showResult() {
   const seat = reveal.winner;
   const line = $('#winner-line');
   if (seat === null || seat === undefined) {
-    // The last castles fell together. Nobody is left to take the throne.
+    // The last castles fell together. There is no castle left for her to reach.
     line.style.setProperty('--seat', 'var(--muted)');
     $('#winner-avatar').innerHTML = ART.crater();
     $('#winner-text').textContent = 'No castle stands. A draw.';
@@ -7014,12 +7006,21 @@ function showResult() {
     const winnerSeat = reveal.players[seat];
     line.style.setProperty('--seat', SEAT_COLORS[seat]);
     $('#winner-avatar').innerHTML = winnerSeat.controlMode === CONTROL_MODE.HUMAN ? ART.human : ART.bot;
+    /**
+     * Every ending says the same thing the game is about: the queen coming to
+     * a castle. The winner's icon sits beside the line, so "their" always has
+     * a face. A game settled by cannon fire says so, because the queen did
+     * not choose that castle — it was the only one left.
+     */
+    const lastStanding = !!reveal.roundLog?.at(-1)?.finale;
     $('#winner-text').textContent =
       seat === app.seat
-        ? 'Your queen has arrived. You win!'
-        : (reveal.eliminatedSeats || []).includes(app.seat)
-        ? 'Their castle outlasted yours.'
-        : 'Claims the throne!';
+        ? lastStanding
+          ? 'Yours is the last castle standing. You win!'
+          : 'The queen has come to your castle. You win!'
+        : lastStanding
+        ? 'Theirs is the last castle standing.'
+        : 'The queen has come to their castle.';
   }
 
   // Stats live in the bottom message strip, not in a panel of their own.
