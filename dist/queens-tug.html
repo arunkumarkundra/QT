@@ -1830,7 +1830,7 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--gold-l
     <p>The queen cannot leave the board. If a move asks her to travel farther than the board allows, she stops at the wall and the extra movement is lost.</p>
 
     <h4>Make your move</h4>
-    <p>You have twenty seconds to place coins, aim a cannonball if you wish, and lock your bid. If you do not lock in time, whatever you have placed — coins and cannonball alike — is submitted for you. With no coins, simply pass.</p>
+    <p>You have twenty seconds to place coins, aim a cannonball if you wish, and lock your bid. If you do not lock in time, whatever you have placed — coins and cannonball alike — is submitted for you. With no coins, simply pass — and if you have no coins <em>and</em> no cannonballs left, there is nothing to decide, so the game passes for you and nobody waits.</p>
 
     <h4>If a player leaves</h4>
     <p>If someone disconnects, one of the court's bots takes their seat. The bot knows only what that player could see. When the player returns, their seat can return to them.</p>
@@ -2336,7 +2336,20 @@ function startGame(state, { now = Date.now() } = {}) {
  * round opens.
  */
 function applyRetirements(state) {
-  const retired = [...(state.retiredSeats || []), ...(state.eliminatedSeats || [])];
+  const retired = [
+    ...(state.retiredSeats || []),
+    ...(state.eliminatedSeats || []),
+    // Nothing to play with: no coins to stake and no cannonball to fire. The
+    // only possible move is a pass, so make it for them rather than hold the
+    // table to the timer. Balances only change when a round resolves, so this
+    // is decided once, as the round opens, and cannot go stale mid-round.
+    ...state.players
+      .map((p) => p.seat)
+      .filter(
+        (seat) =>
+          state.coinAllocationState[seat].coinsRemaining <= 0 && !((state.cannonballs || [])[seat] > 0)
+      ),
+  ];
   if (!retired.length) return state;
   const s = {
     ...state,
@@ -4288,7 +4301,8 @@ function createHost({
     }
     if (turnMode === TURN_MODE.SEQUENTIAL) {
       setTimeout(() => {
-        activeSeat = humanSeats()[0] ?? null;
+        // The first human who actually has a move to make.
+        activeSeat = humanSeats().find((seat) => !state.lockedSeats.includes(seat)) ?? null;
         state = { ...state, timerDeadline: null }; // paused until beginTurn()
         emit('round-open', { roundNumber: state.roundNumber });
         scheduleAi();
@@ -4297,6 +4311,8 @@ function createHost({
       setTimeout(() => {
         emit('round-open', { roundNumber: state.roundNumber });
         scheduleAi();
+        // Every seat may already be passed for — nobody left with a move.
+        if (allSeatsLocked(state) && autoResolve) doResolve();
       }, presentMs);
     }
   }
@@ -4406,7 +4422,7 @@ function createHost({
     start() {
       state = startGame(state, { now: Date.now() });
       if (turnMode === TURN_MODE.SEQUENTIAL) {
-        activeSeat = humanSeats()[0] ?? null;
+        activeSeat = humanSeats().find((seat) => !state.lockedSeats.includes(seat)) ?? null;
         state = { ...state, timerDeadline: null }; // paused until beginTurn()
       }
       startTicker();
@@ -6252,6 +6268,11 @@ function renderStatus(view) {
     status.innerHTML = 'Tap a cell to aim your cannonball.';
     return;
   }
+  // Passed for automatically: no coins to stake and no cannonball to fire.
+  if (view.you.locked && view.you.coinsRemaining <= 0 && !(view.you.cannonballs > 0)) {
+    status.innerHTML = 'No coins or cannonballs left, so you pass. Coins refill when everyone runs out.';
+    return;
+  }
   if (view.you.locked) {
     const waiting = view.opponents.filter((o) => !o.locked).length;
     status.innerHTML = waiting
@@ -6259,8 +6280,9 @@ function renderStatus(view) {
       : 'The queen is listening…';
     return;
   }
-  if (view.you.coinsRemaining === 0) {
-    status.innerHTML = "You're out of coins. Pass. Everyone refills when all four are empty.";
+  if (view.you.coinsRemaining === 0 && !view.you.currentBid.shot) {
+    // Out of coins but still armed: the cannon is the only move left.
+    status.innerHTML = 'Out of coins. Drag a cannonball to strike, or tap the queen to pass.';
     return;
   }
   if (view.you.currentBidTotal > 0 || view.you.currentBid.shot) {

@@ -280,7 +280,20 @@ export function startGame(state, { now = Date.now() } = {}) {
  * round opens.
  */
 export function applyRetirements(state) {
-  const retired = [...(state.retiredSeats || []), ...(state.eliminatedSeats || [])];
+  const retired = [
+    ...(state.retiredSeats || []),
+    ...(state.eliminatedSeats || []),
+    // Nothing to play with: no coins to stake and no cannonball to fire. The
+    // only possible move is a pass, so make it for them rather than hold the
+    // table to the timer. Balances only change when a round resolves, so this
+    // is decided once, as the round opens, and cannot go stale mid-round.
+    ...state.players
+      .map((p) => p.seat)
+      .filter(
+        (seat) =>
+          state.coinAllocationState[seat].coinsRemaining <= 0 && !((state.cannonballs || [])[seat] > 0)
+      ),
+  ];
   if (!retired.length) return state;
   const s = {
     ...state,

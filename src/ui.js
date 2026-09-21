@@ -1268,6 +1268,11 @@ function renderStatus(view) {
     status.innerHTML = 'Tap a cell to aim your cannonball.';
     return;
   }
+  // Passed for automatically: no coins to stake and no cannonball to fire.
+  if (view.you.locked && view.you.coinsRemaining <= 0 && !(view.you.cannonballs > 0)) {
+    status.innerHTML = 'No coins or cannonballs left, so you pass. Coins refill when everyone runs out.';
+    return;
+  }
   if (view.you.locked) {
     const waiting = view.opponents.filter((o) => !o.locked).length;
     status.innerHTML = waiting
@@ -1275,8 +1280,9 @@ function renderStatus(view) {
       : 'The queen is listening…';
     return;
   }
-  if (view.you.coinsRemaining === 0) {
-    status.innerHTML = "You're out of coins. Pass. Everyone refills when all four are empty.";
+  if (view.you.coinsRemaining === 0 && !view.you.currentBid.shot) {
+    // Out of coins but still armed: the cannon is the only move left.
+    status.innerHTML = 'Out of coins. Drag a cannonball to strike, or tap the queen to pass.';
     return;
   }
   if (view.you.currentBidTotal > 0 || view.you.currentBid.shot) {

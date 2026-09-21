@@ -171,7 +171,8 @@ export function createHost({
     }
     if (turnMode === TURN_MODE.SEQUENTIAL) {
       setTimeout(() => {
-        activeSeat = humanSeats()[0] ?? null;
+        // The first human who actually has a move to make.
+        activeSeat = humanSeats().find((seat) => !state.lockedSeats.includes(seat)) ?? null;
         state = { ...state, timerDeadline: null }; // paused until beginTurn()
         emit('round-open', { roundNumber: state.roundNumber });
         scheduleAi();
@@ -180,6 +181,8 @@ export function createHost({
       setTimeout(() => {
         emit('round-open', { roundNumber: state.roundNumber });
         scheduleAi();
+        // Every seat may already be passed for — nobody left with a move.
+        if (allSeatsLocked(state) && autoResolve) doResolve();
       }, presentMs);
     }
   }
@@ -289,7 +292,7 @@ export function createHost({
     start() {
       state = startGame(state, { now: Date.now() });
       if (turnMode === TURN_MODE.SEQUENTIAL) {
-        activeSeat = humanSeats()[0] ?? null;
+        activeSeat = humanSeats().find((seat) => !state.lockedSeats.includes(seat)) ?? null;
         state = { ...state, timerDeadline: null }; // paused until beginTurn()
       }
       startTicker();

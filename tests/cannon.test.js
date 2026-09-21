@@ -232,6 +232,34 @@ test('No treasure is ever placed on a crater', () => {
   eq(b.position, cell(7, 7));
 });
 
+console.log('\n\x1b[1mNothing left to play\x1b[0m');
+
+test('A seat with no coins and no cannonballs is passed for as the round opens', () => {
+  let s = board();
+  s.coinAllocationState[2].coinsRemaining = 0;
+  s.cannonballs[2] = 0;
+  const { state } = play(s, {});
+  assert(state.lockedSeats.includes(2), 'An empty-handed seat should be pre-locked');
+  eq(state.currentRoundBids[2], emptyBid());
+});
+
+test('No coins but a cannonball left: still gets a turn', () => {
+  let s = board();
+  s.coinAllocationState[2].coinsRemaining = 0;
+  const { state } = play(s, {});
+  assert(!state.lockedSeats.includes(2), 'A seat that can still fire must be allowed to decide');
+  assert(validateBid(state, 2, shot(6, 6)).ok, 'It should be able to fire');
+});
+
+test('Cannonballs but coins refilled: gets a turn again', () => {
+  let s = board();
+  s.cannonballs = [0, 0, 0, 0];
+  s.coinAllocationState.forEach((a) => (a.coinsRemaining = 0));
+  const { state } = play(s, {});
+  // Everyone was empty, so coins refilled at resolution — nobody is passed for.
+  eq(state.lockedSeats, [], 'After a refill every seat has a move');
+});
+
 console.log('\n\x1b[1mThe end\x1b[0m');
 
 test('Last castle standing: the queen walks straight to it and the game ends', () => {
