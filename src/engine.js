@@ -603,7 +603,11 @@ export function shouldBreakStalemate(state) {
 
 export function replenishCoins(state) {
   const s = clone(state);
-  s.coinAllocationState.forEach((a) => {
+  // Only players still in the game are refilled. A fallen castle, or a seat
+  // whose player has left, can never spend again.
+  const standing = standingSeats(s);
+  s.coinAllocationState.forEach((a, seat) => {
+    if (!standing.includes(seat)) return;
     a.coinsRemaining += s.config.replenishCoins;
     a.allocationNumber += 1;
     a.spentThisAllocation = 0;

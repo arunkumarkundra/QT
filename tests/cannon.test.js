@@ -183,6 +183,15 @@ test("A fallen player's unspent coins never block replenishment", () => {
   assert(shouldReplenishCoins(state), 'Replenishment blocked by a fallen seat');
 });
 
+test('When every standing player is out of coins, all of them refill — but not the fallen', () => {
+  let { state } = play(board(), { 0: shot(2, 9) }); // seat 1 falls
+  state.coinAllocationState.forEach((a, seat) => (a.coinsRemaining = seat === 1 ? 7 : 0));
+  const { state: after } = play(state, {});
+  const r = after.config.replenishCoins;
+  eq(after.coinAllocationState.map((a) => a.coinsRemaining), [r, 7, r, r]);
+  eq(after.metrics.replenishments, 1);
+});
+
 console.log('\n\x1b[1mTreasure\x1b[0m');
 
 test('A struck treasure vanishes for its owner and nobody else learns it was there', () => {
