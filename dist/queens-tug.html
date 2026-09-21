@@ -1043,6 +1043,213 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--gold-l
   text-align: center;
 }
 
+/* ==========================================================================
+   CANNON FIRE
+   ========================================================================== */
+
+/* --- the rack: your cannonballs, in the top bar --- */
+
+.ammo {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 4px 9px;
+  border-radius: 99px;
+  background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(0,0,0,.34));
+  border: 1px solid var(--line);
+  flex: none;
+  transition: border-color .2s, box-shadow .2s, opacity .2s;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.ammo[hidden] { display: none; }
+.ammo-ball {
+  position: relative;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  border-radius: 50%;
+  transition: transform .15s, opacity .2s;
+}
+.ammo-ball svg { width: 100%; height: 100%; display: block; }
+/* A fired ball leaves an empty socket in the rack. */
+.ammo-ball.spent {
+  width: 20px; height: 20px; margin: 2px;
+  background: radial-gradient(circle at 50% 60%, rgba(0,0,0,.65), rgba(0,0,0,.25));
+  box-shadow: inset 0 1px 3px rgba(0,0,0,.8), 0 0 0 1px rgba(150,178,220,.12);
+}
+/* The ball aimed this round is out on the board, so its slot reads as lifted. */
+.ammo-ball.aimed { opacity: .28; }
+
+.ammo.armed {
+  border-color: color-mix(in srgb, var(--gold) 45%, var(--line));
+  touch-action: none;
+}
+.ammo.armed .ammo-ball.ready { cursor: grab; }
+.ammo.armed .ammo-ball.ready:hover { transform: translateY(-2px) scale(1.08); }
+.ammo.armed:active .ammo-ball.ready { cursor: grabbing; }
+.ammo.aiming {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 1px rgba(217,164,65,.35), 0 0 12px rgba(217,164,65,.4);
+}
+.ammo.aiming .ammo-ball.ready:last-of-type,
+.ammo.aiming .ammo-ball.ready { animation: ammo-ready 1s ease-in-out infinite; }
+@keyframes ammo-ready { 50% { transform: translateY(-2px); } }
+.ammo.fallen { opacity: .35; filter: grayscale(1); }
+
+/* The ball under your finger or pointer while dragging. */
+.drag-ball {
+  position: fixed;
+  left: 0; top: 0;
+  width: 38px; height: 38px;
+  margin: -19px 0 0 -19px;
+  pointer-events: none;
+  z-index: 1000;
+  filter: drop-shadow(0 8px 10px rgba(0,0,0,.7));
+  will-change: transform;
+}
+.drag-ball svg { width: 100%; height: 100%; display: block; }
+
+/* --- aiming on the board --- */
+
+/* Cells a shot can never land on go dark; the rest stay lit. */
+.board.aim-mode .cell:not(.aimable) { background-color: rgba(3, 5, 9, .55); }
+.board.aim-mode .cell.aimable { cursor: crosshair; }
+.board.aim-mode .cell.aimable::before {
+  content: '';
+  position: absolute;
+  inset: 22%;
+  border-radius: 50%;
+  border: 1.5px dashed rgba(247, 221, 160, .22);
+  transition: border-color .12s, inset .12s;
+  pointer-events: none;
+  z-index: 3;
+}
+.board.aim-mode .cell.aimable:hover::before,
+.board.aim-mode .cell.aim-hover::before {
+  inset: 10%;
+  border-color: rgba(247, 221, 160, .95);
+  border-style: solid;
+  box-shadow: 0 0 10px rgba(255, 150, 60, .55), inset 0 0 8px rgba(255, 150, 60, .35);
+}
+/* Coin hints give way while you aim. */
+.board.aim-mode .cell .dir-hint { opacity: .15; }
+
+/* Your aimed ball, sitting in its crosshair. */
+.shot-mark { z-index: 7; }
+.shot-mark svg { position: relative; width: 58%; height: 58%; filter: drop-shadow(0 3px 4px rgba(0,0,0,.8)); }
+.shot-mark .crosshair {
+  position: absolute;
+  inset: 6%;
+  border-radius: 50%;
+  border: 1.5px solid rgba(247, 221, 160, .9);
+  box-shadow: 0 0 8px rgba(255, 150, 60, .5);
+  background:
+    linear-gradient(rgba(247,221,160,.9), rgba(247,221,160,.9)) 50% 0 / 1.5px 18% no-repeat,
+    linear-gradient(rgba(247,221,160,.9), rgba(247,221,160,.9)) 50% 100% / 1.5px 18% no-repeat,
+    linear-gradient(rgba(247,221,160,.9), rgba(247,221,160,.9)) 0 50% / 18% 1.5px no-repeat,
+    linear-gradient(rgba(247,221,160,.9), rgba(247,221,160,.9)) 100% 50% / 18% 1.5px no-repeat;
+  animation: crosshair-turn 6s linear infinite;
+}
+@keyframes crosshair-turn { to { transform: rotate(360deg); } }
+.shot-mark.live { pointer-events: auto; cursor: grab; touch-action: none; }
+.shot-mark.lifted { opacity: .25; }
+.shot-mark:not(.live) .crosshair { animation: none; border-color: var(--gold); }
+
+/* --- impact --- */
+
+.blast-mark { z-index: 9; overflow: visible; }
+.blast-mark svg {
+  position: absolute;
+  width: 260%; height: 260%;
+  animation: blast .95s cubic-bezier(.2, .9, .3, 1) forwards;
+}
+@keyframes blast {
+  0% { transform: scale(.15) rotate(0deg); opacity: 1; }
+  30% { transform: scale(1) rotate(12deg); opacity: 1; }
+  100% { transform: scale(1.25) rotate(20deg); opacity: 0; }
+}
+.blast-mark .shock {
+  position: absolute;
+  width: 100%; height: 100%;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 230, 170, .9);
+  animation: shock .8s ease-out forwards;
+}
+@keyframes shock {
+  from { transform: scale(.3); opacity: 1; border-width: 5px; }
+  to { transform: scale(4.2); opacity: 0; border-width: 1px; }
+}
+
+.board-plate.shake { animation: board-shake .45s ease-out; }
+@keyframes board-shake {
+  0%, 100% { transform: none; }
+  15% { transform: translate(-5px, 3px); }
+  30% { transform: translate(5px, -3px); }
+  45% { transform: translate(-3px, -2px); }
+  60% { transform: translate(3px, 2px); }
+  80% { transform: translate(-1px, 1px); }
+}
+
+/* What a cannonball leaves behind: permanent, and beneath everything else. */
+.crater-mark { z-index: 2; }
+.crater-mark svg { width: 104%; height: 104%; }
+.crater-mark.fresh svg { animation: crater-cool 2.2s ease-out; }
+@keyframes crater-cool {
+  0% { filter: brightness(2.2) drop-shadow(0 0 10px #ff8a2a); }
+  100% { filter: none; }
+}
+
+.ruin-mark { z-index: 4; }
+.ruin-mark svg { width: 88%; height: 88%; filter: saturate(.8) brightness(.95) drop-shadow(0 2px 3px rgba(0,0,0,.9)); }
+.ruin-mark.fresh svg { animation: ruin-fall .7s cubic-bezier(.3, 1.4, .5, 1); }
+@keyframes ruin-fall {
+  0% { transform: translateY(-30%) scale(1.15); opacity: 0; }
+  100% { transform: none; opacity: 1; }
+}
+
+/* Your own treasure, blown away. */
+.bonus-mark.shattered { animation: shatter .6s ease-in forwards; }
+@keyframes shatter {
+  0% { transform: none; opacity: 1; filter: brightness(1.8); }
+  100% { transform: scale(1.5) rotate(18deg); opacity: 0; filter: brightness(.4); }
+}
+
+/* --- a fallen player --- */
+
+.seat-chip.fallen { border-color: #3a404c; box-shadow: none; }
+.seat-chip.fallen .avatar { filter: grayscale(1); opacity: .35; }
+.seat-chip.fallen .lock-badge { display: none; }
+.seat-chip .fallen-mark {
+  position: absolute;
+  inset: 20%;
+  color: color-mix(in srgb, var(--danger) 85%, #fff);
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,.9));
+}
+.seat-chip .fallen-mark svg { width: 100%; height: 100%; display: block; }
+
+/* A player named by colour in a sentence. */
+.seat-dot {
+  display: inline-block;
+  width: .7em; height: .7em;
+  margin: 0 .12em;
+  border-radius: 50%;
+  vertical-align: baseline;
+  background: var(--seat);
+  box-shadow: 0 0 0 2px rgba(0,0,0,.5), 0 0 6px var(--seat);
+}
+
+@media (max-width: 620px) {
+  .ammo { padding: 3px 7px; gap: 2px; }
+  .ammo-ball { width: 20px; height: 20px; }
+  .ammo-ball.spent { width: 16px; height: 16px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shot-mark .crosshair, .ammo.aiming .ammo-ball.ready { animation: none; }
+  .board-plate.shake { animation: none; }
+}
+
 /* Near miss: the queen crossed this castle without stopping on it. */
 .castle-mark.near-miss svg { animation: near-miss 1.1s ease-out 2; }
 @keyframes near-miss {
@@ -1447,6 +1654,9 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--gold-l
       <div class="bar">
         <span class="brand">QUEEN'S TUG</span>
         <span class="bar-spacer"></span>
+        <!-- Your cannonballs. Drag one onto the board, or tap here then tap a cell. -->
+        <div class="ammo" id="ammo" role="group" aria-label="Cannonballs"></div>
+        <span class="bar-spacer"></span>
         <button class="icon-btn" id="btn-sound" aria-label="Toggle sound"></button>
         <button class="icon-btn" id="btn-help" aria-label="How to play"></button>
         <button class="icon-btn" id="btn-exit" aria-label="Leave game"></button>
@@ -1576,21 +1786,32 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--gold-l
     <p>There is also a secret treasure on your board that only you can see. It holds extra coins, but it loses coins every time the queen moves: the longer you wait, the less it is worth.</p>
     <p>Land exactly on it and you collect whatever is left. Once claimed — or once it reaches zero — a new one appears elsewhere. So every treasure poses the same question: <em>chase the castle, or chase the coins?</em></p>
 
+    <h4>Cannonballs</h4>
+    <p>Each player has <span class="cannon-count">three</span> cannonballs for the whole game and may fire one per round, alongside their coins. Watch where the others keep pulling the queen — they want her there for a reason. When you think you know where a rival's castle or treasure lies, drag a cannonball onto that cell.</p>
+    <p>Cannonballs land before the queen moves. Everyone sees the explosion; nobody learns who fired.</p>
+    <ul>
+      <li><strong>Hit a castle</strong> and it falls. Its owner is out of the game — they can keep watching, but no longer bid, fire or win.</li>
+      <li><strong>Hit a treasure</strong> and it is lost. Only its owner knows. They get a new one only when the old one would have run out anyway.</li>
+      <li><strong>Every cell you strike</strong> stays scorched for the rest of the game. Nothing new is ever placed there.</li>
+    </ul>
+    <p>You cannot fire at your own castle or treasure, at the queen, at the edge of the board, or at an old crater.</p>
+    <p>When only one castle is left standing, the queen goes straight to it and that player wins. If the last castles fall together, nobody does.</p>
+
     <h4>What the others can see</h4>
-    <p>They see the queen, the board, and which way she moved. They see their own castle and their own treasure. They do not see your castle, your bids, your coin balance or your treasure — and you do not see theirs.</p>
+    <p>They see the queen, the board, which way she moved, and every explosion. They see their own castle and their own treasure. They do not see your castle, your bids, your coin balance, your treasure or your cannonballs — and you do not see theirs.</p>
     <p class="aside">You may know where the queen went. You will have to guess why.</p>
 
     <h4>The walls</h4>
     <p>The queen cannot leave the board. If a move asks her to travel farther than the board allows, she stops at the wall and the extra movement is lost.</p>
 
     <h4>Make your move</h4>
-    <p>You have twenty seconds to place coins and lock your bid. If you do not lock in time, whatever you have placed is submitted for you. With no coins, simply pass.</p>
+    <p>You have twenty seconds to place coins, aim a cannonball if you wish, and lock your bid. If you do not lock in time, whatever you have placed — coins and cannonball alike — is submitted for you. With no coins, simply pass.</p>
 
     <h4>If a player leaves</h4>
     <p>If someone disconnects, one of the court's bots takes their seat. The bot knows only what that player could see. When the player returns, their seat can return to them.</p>
 
     <h4>The final reveal</h4>
-    <p>During the game the hidden castles stay hidden. When someone wins, the secrets come out: all four castles, the queen's complete journey, the treasures that appeared, and who reached their castle.</p>
+    <p>During the game the hidden castles stay hidden. When the game ends, the secrets come out: all four castles, the queen's complete journey, the treasures that appeared, and who reached their castle.</p>
     <p class="aside">The queen's journey is the story of the game.</p>
 
     <h4>Controls</h4>
@@ -1598,11 +1819,13 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--gold-l
       <li>Tap a glowing cell to stake a coin toward that direction.</li>
       <li>Tap the opposite cell to take a coin back.</li>
       <li>Long-press or right-click a stack to remove a coin when there is no opposite cell.</li>
+      <li>Drag a cannonball from the top of the screen onto a cell to aim it — or tap the cannonballs, then tap a cell.</li>
+      <li>Tap an aimed cannonball, or drag it off the board, to take it back.</li>
       <li>Tap the queen to lock your bid — with nothing staked, that passes the round.</li>
       <li>Arrow keys stake, Backspace removes, Enter locks.</li>
     </ul>
 
-    <p class="sign-off">Hide your castle. Spend your coins wisely. And pull the queen your way.</p>
+    <p class="sign-off">Hide your castle. Spend your coins wisely. Fire only when you are sure. And pull the queen your way.</p>
   </div>
 </div>
 
@@ -1685,6 +1908,13 @@ const DEFAULT_CONFIG = {
 
   /** §10.2 — Bonus decays by actual queen movement, clamped at this floor. */
   bonusMinReward: 0,
+
+  /**
+   * Cannonballs each player may fire in a game, at most one per round. A shot
+   * lands before the queen moves: it destroys a castle (that player is out)
+   * or a treasure on the target cell, and leaves a permanent crater.
+   */
+  cannonballsPerPlayer: 3,
 
   /** §3 — No game time limit. §26 forbids introducing one. */
   gameTimeLimitMs: null,
@@ -1882,6 +2112,9 @@ function occupiedHiddenCells(state, { includeQueen = true, exceptSeat = -1 } = {
     if (b && i !== exceptSeat) taken.add(cellKey(b.position));
   });
   if (includeQueen && state.queenPosition) taken.add(cellKey(state.queenPosition));
+  // A cannonball crater is scorched for the rest of the game: nothing new
+  // may ever be placed there.
+  (state.craters || []).forEach((p) => taken.add(cellKey(p)));
   return taken;
 }
 
@@ -1979,6 +2212,16 @@ function createGame({ seed, config = {}, players = [] } = {}) {
      */
     retiredSeats: [],
 
+    /* ---- Cannon fire ---- */
+    /** Cannonballs each seat still holds. Private: counting them would reveal who fired. */
+    cannonballs: [],
+    /** Every cell a cannonball has struck. Public, and permanent. */
+    craters: [],
+    /** Seats whose castle was destroyed. Public. They bid nothing and can never win. */
+    eliminatedSeats: [],
+    /** True when the last standing castles fell together and nobody won. */
+    draw: false,
+
     completeQueenPath: [], // authoritative only — never in a PlayerView (§5.3)
     bonusLedger: [], // authoritative only — for the end reveal (§18)
     /**
@@ -2000,6 +2243,9 @@ function createGame({ seed, config = {}, players = [] } = {}) {
       cellsTravelled: 0,
       wallBlocks: 0,
       coinsSpent: 0,
+      shotsFired: 0,
+      castlesDestroyed: 0,
+      treasuresDestroyed: 0,
     },
   };
 
@@ -2023,6 +2269,7 @@ function createGame({ seed, config = {}, players = [] } = {}) {
       spentThisAllocation: 0,
     });
     state.currentRoundBids.push(null);
+    state.cannonballs.push(cfg.cannonballsPerPlayer);
     state.previousBonusCell.push(null);
     state.activeBonuses.push(null);
   }
@@ -2064,7 +2311,7 @@ function startGame(state, { now = Date.now() } = {}) {
  * round opens.
  */
 function applyRetirements(state) {
-  const retired = state.retiredSeats || [];
+  const retired = [...(state.retiredSeats || []), ...(state.eliminatedSeats || [])];
   if (!retired.length) return state;
   const s = {
     ...state,
@@ -2081,6 +2328,38 @@ function applyRetirements(state) {
 /* ------------------------------------------------------------------ *
  * Bidding (§8, §12, §21, §25 step 7)
  * ------------------------------------------------------------------ */
+
+/** Seats still in the game: not eliminated by cannon fire and not retired. */
+const standingSeats = (state) =>
+  state.players
+    .map((p) => p.seat)
+    .filter((seat) => !(state.eliminatedSeats || []).includes(seat) && !(state.retiredSeats || []).includes(seat));
+
+/**
+ * Validate a cannon shot. A seat may fire at most once per round (one `shot`
+ * per bid), only while it holds a cannonball, and only at a cell where a
+ * castle or treasure could possibly be: inside the placement margin, not a
+ * crater, not the queen's square, and never at its own castle or treasure.
+ */
+function validateShot(state, seat, shot) {
+  if (!shot || typeof shot !== 'object' || !Number.isInteger(shot.r) || !Number.isInteger(shot.c)) {
+    return { ok: false, error: 'Malformed cannon shot.' };
+  }
+  const p = cell(shot.r, shot.c);
+  if ((state.eliminatedSeats || []).includes(seat)) {
+    return { ok: false, error: 'Your castle has fallen. You can no longer fire.' };
+  }
+  if (!((state.cannonballs || [])[seat] > 0)) return { ok: false, error: 'You have no cannonballs left.' };
+  if (!inBounds(state, p) || !isValidHiddenCell(state, p)) {
+    return { ok: false, error: 'Nothing can stand on the edge of the board. Aim further in.' };
+  }
+  if ((state.craters || []).some((c) => sameCell(c, p))) return { ok: false, error: 'That cell is already a crater.' };
+  if (sameCell(state.queenPosition, p)) return { ok: false, error: 'You cannot fire at the queen.' };
+  if (sameCell(state.castles[seat], p)) return { ok: false, error: 'That is your own castle.' };
+  const own = state.activeBonuses[seat];
+  if (own && !own.destroyed && sameCell(own.position, p)) return { ok: false, error: 'That is your own treasure.' };
+  return { ok: true, shot: p };
+}
 
 /**
  * §8, §21, §24 — Validate a client-submitted bid. The client submits INTENT
@@ -2112,7 +2391,15 @@ function validateBid(state, seat, bid) {
     normalised[d] = v;
   }
   for (const k of Object.keys(bid)) {
+    if (k === 'shot') continue;
     if (!DIRECTIONS.includes(k)) return { ok: false, error: 'Bids may only target the four adjacent cells.' };
+  }
+
+  // The round's cannon shot, if any, travels with the bid: one plan, one lock.
+  if (bid.shot != null) {
+    const aim = validateShot(state, seat, bid.shot);
+    if (!aim.ok) return aim;
+    normalised.shot = aim.shot;
   }
 
   const total = bidTotal(normalised);
@@ -2235,6 +2522,8 @@ function checkWinner(state, finalPosition) {
   for (let seat = 0; seat < state.castles.length; seat++) {
     // A player who has left cannot be handed the crown in their absence.
     if (retired.includes(seat)) continue;
+    // A destroyed castle is rubble: the queen stopping there wins nothing.
+    if ((state.eliminatedSeats || []).includes(seat)) continue;
     if (sameCell(state.castles[seat], finalPosition)) return seat;
   }
   return null;
@@ -2258,8 +2547,7 @@ function retireSeat(state, seat) {
 }
 
 /** Seats still able to act this round. */
-const activeSeats = (state) =>
-  state.players.filter((p) => !(state.retiredSeats || []).includes(p.seat)).map((p) => p.seat);
+const activeSeats = (state) => standingSeats(state);
 
 /** §10.2 — reduce every remaining active bonus by the actual distance moved. */
 function decayBonuses(state, actualDistanceMoved) {
@@ -2280,10 +2568,18 @@ function replaceExpiredBonuses(state, collectedSeats = []) {
   let s = clone(state);
   const replaced = [];
   for (let seat = 0; seat < s.activeBonuses.length; seat++) {
+    // A fallen player gets no more treasure.
+    if ((s.eliminatedSeats || []).includes(seat)) continue;
     const bonus = s.activeBonuses[seat];
     const wasCollected = collectedSeats.includes(seat);
     if (!wasCollected && bonus && bonus.reward > s.config.bonusMinReward) continue;
 
+    /**
+     * A treasure destroyed by cannon fire stays in play as a ghost — unseen,
+     * uncollectable, but still decaying with the others — and is replaced
+     * only when it would have run out anyway. Losing a treasure must never
+     * be a shortcut to a fresh, full one.
+     */
     const entry = s.bonusLedger.filter((e) => e.seat === seat && e.outcome === 'ACTIVE').pop();
     if (entry) entry.outcome = wasCollected ? 'COLLECTED' : 'DECAYED';
 
@@ -2298,14 +2594,18 @@ function replaceExpiredBonuses(state, collectedSeats = []) {
       round: s.roundNumber + 1,
       outcome: 'ACTIVE',
     });
-    replaced.push({ seat, reason: wasCollected ? 'COLLECTED' : 'DECAYED', bonus: fresh });
+    replaced.push({ seat, reason: wasCollected ? 'COLLECTED' : bonus?.destroyed ? 'RESTORED' : 'DECAYED', bonus: fresh });
   }
   return { state: s, replaced };
 }
 
 /** §11 — replenishment is a four-player condition, never a single-player one. */
 function shouldReplenishCoins(state) {
-  return state.coinAllocationState.every((a) => a.coinsRemaining <= 0);
+  // Only seats still in the game count. A fallen player's unspent coins must
+  // not hold everyone else's replenishment hostage.
+  const seats = standingSeats(state);
+  if (!seats.length) return false;
+  return seats.every((seat) => state.coinAllocationState[seat].coinsRemaining <= 0);
 }
 
 /**
@@ -2334,6 +2634,94 @@ function replenishCoins(state) {
  * Round resolution — the exact ordering mandated by §22
  * ------------------------------------------------------------------ */
 
+/**
+ * Resolve every cannon shot in the round's bids. Shots are simultaneous: two
+ * balls on one cell make one crater. A castle on a struck cell falls and its
+ * owner is out; a treasure on a struck cell becomes a ghost (see
+ * replaceExpiredBonuses). Returns public explosions, the seats knocked out,
+ * and the private list of treasure hits, which only each owner may learn of.
+ */
+function fireCannons(state, bids) {
+  const s = state;
+  s.craters = s.craters || [];
+  s.eliminatedSeats = s.eliminatedSeats || [];
+  s.cannonballs = s.cannonballs || s.players.map(() => 0);
+
+  const targets = new Map();
+  bids.forEach((bid, seat) => {
+    if (!bid?.shot) return;
+    // Re-checked here: a plan is only as good as the board it lands on.
+    const aim = validateShot(s, seat, bid.shot);
+    if (!aim.ok) return;
+    s.cannonballs[seat] -= 1;
+    s.metrics.shotsFired = (s.metrics.shotsFired || 0) + 1;
+    targets.set(cellKey(aim.shot), aim.shot);
+  });
+
+  const explosions = [];
+  const eliminated = [];
+  const treasureHits = [];
+  const events = [];
+
+  for (const p of targets.values()) {
+    s.craters.push(cell(p.r, p.c));
+
+    let castleSeat = null;
+    s.castles.forEach((c, seat) => {
+      if (castleSeat === null && sameCell(c, p) && !s.eliminatedSeats.includes(seat)) castleSeat = seat;
+    });
+    if (castleSeat !== null) {
+      s.eliminatedSeats.push(castleSeat);
+      eliminated.push(castleSeat);
+      s.metrics.castlesDestroyed = (s.metrics.castlesDestroyed || 0) + 1;
+      events.push({ type: 'CASTLE_DESTROYED', seat: castleSeat, position: cell(p.r, p.c) });
+    }
+
+    s.activeBonuses.forEach((b, seat) => {
+      if (!b || b.destroyed || !sameCell(b.position, p)) return;
+      b.destroyed = true;
+      treasureHits.push({ seat, position: cell(p.r, p.c) });
+      s.metrics.treasuresDestroyed = (s.metrics.treasuresDestroyed || 0) + 1;
+      const entry = s.bonusLedger.filter((e) => e.seat === seat && e.outcome === 'ACTIVE').pop();
+      if (entry) entry.outcome = 'DESTROYED';
+    });
+
+    explosions.push({ position: cell(p.r, p.c), castleSeat });
+  }
+
+  // A fallen player's treasure goes with their castle.
+  for (const seat of eliminated) {
+    const b = s.activeBonuses[seat];
+    if (b && !b.destroyed) {
+      const entry = s.bonusLedger.filter((e) => e.seat === seat && e.outcome === 'ACTIVE').pop();
+      if (entry) entry.outcome = 'LOST';
+    }
+    s.activeBonuses[seat] = null;
+  }
+
+  if (explosions.length) events.unshift({ type: 'CANNON_FIRE', count: explosions.length });
+  return { state: s, explosions, eliminated, treasureHits, events };
+}
+
+/**
+ * The finale's walk: straight to the last castle, rows first, then columns,
+ * one cell at a time so the board can animate it like any other move.
+ */
+function walkToCastle(state, target) {
+  let pos = cell(state.queenPosition.r, state.queenPosition.c);
+  const path = [];
+  if (!target) return { finalPosition: pos, actualDistance: 0, path, blockedByBoundary: false };
+  while (pos.r !== target.r) {
+    pos = cell(pos.r + Math.sign(target.r - pos.r), pos.c);
+    path.push(pos);
+  }
+  while (pos.c !== target.c) {
+    pos = cell(pos.r, pos.c + Math.sign(target.c - pos.c));
+    path.push(pos);
+  }
+  return { finalPosition: pos, actualDistance: path.length, path, blockedByBoundary: false };
+}
+
 function resolveRound(state, { now = Date.now() } = {}) {
   if (state.status !== STATUS.PLAYING) {
     return { state, error: 'Game is not in progress.' };
@@ -2360,31 +2748,54 @@ function resolveRound(state, { now = Date.now() } = {}) {
     if (DIRECTIONS.filter((d) => bid[d] > 0).length > 1) s.metrics.splitBidDecisions += 1;
   }
 
-  // 2–5. Totals → cancellation → winning direction → requested distance.
-  const net = calculateNetMovement(bids);
-
-  // 6–7. Move until exhausted or the wall, and record the actual distance.
-  const movement = moveQueen(s, net.direction, net.requestedDistance);
-  s.queenPosition = movement.finalPosition;
-  s.completeQueenPath.push(...movement.path);
-
   /**
    * Snapshot the board as it stood for THIS round: where every bonus sat and
-   * what it was worth before the move resolved. The replay needs this to show
+   * what it was worth before anything resolved. The replay needs this to show
    * the state players were actually reacting to.
    */
   const bonusesAtRoundStart = s.activeBonuses.map((b, seat) =>
-    b ? { seat, position: cell(b.position.r, b.position.c), reward: b.reward } : null
+    b && !b.destroyed ? { seat, position: cell(b.position.r, b.position.c), reward: b.reward } : null
   );
 
-  // 8. Castle landing ends the game immediately.
-  const winnerSeat = checkWinner(s, s.queenPosition);
-
   const events = [];
+
+  // 1b. Cannon fire. Every shot lands before the queen moves.
+  const cannon = fireCannons(s, bids);
+  s = cannon.state;
+  events.push(...cannon.events);
+
+  // 2–5. Totals → cancellation → winning direction → requested distance.
+  const net = calculateNetMovement(bids);
+
+  /**
+   * The last castle standing. Once cannon fire leaves a single castle, the
+   * game has only one possible ending, so it is played out at once: the queen
+   * walks straight to it, with no more bidding. If the last castles fell
+   * together, nobody is left to win.
+   */
+  const standing = standingSeats(s);
+  const finale = (s.eliminatedSeats || []).length > 0 && standing.length <= 1;
+
+  // 6–7. Move until exhausted or the wall, and record the actual distance.
+  const movement = finale
+    ? walkToCastle(s, standing.length ? s.castles[standing[0]] : null)
+    : moveQueen(s, net.direction, net.requestedDistance);
+  s.queenPosition = movement.finalPosition;
+  s.completeQueenPath.push(...movement.path);
+
+  // 8. Castle landing ends the game immediately.
+  const winnerSeat = finale ? (standing.length ? standing[0] : null) : checkWinner(s, s.queenPosition);
+
   let collectedSeats = [];
   let collection = null;
 
-  if (winnerSeat !== null) {
+  if (finale && winnerSeat === null) {
+    s.draw = true;
+    s.status = STATUS.FINISHED;
+    s.phase = PHASES.FINISHED;
+    s.timerDeadline = null;
+    events.push({ type: 'DRAW' });
+  } else if (winnerSeat !== null) {
     s.winner = winnerSeat;
     s.status = STATUS.FINISHED;
     s.phase = PHASES.FINISHED;
@@ -2395,7 +2806,7 @@ function resolveRound(state, { now = Date.now() } = {}) {
     //    immediately before collection is resolved (§10.3, §21).
     for (let seat = 0; seat < s.activeBonuses.length; seat++) {
       const bonus = s.activeBonuses[seat];
-      if (bonus && sameCell(bonus.position, s.queenPosition)) {
+      if (bonus && !bonus.destroyed && sameCell(bonus.position, s.queenPosition)) {
         const reward = bonus.reward;
         s.coinAllocationState[seat].coinsRemaining += reward;
         collectedSeats.push(seat);
@@ -2457,16 +2868,26 @@ function resolveRound(state, { now = Date.now() } = {}) {
     surviving: net.surviving,
     verticalNet: net.verticalNet,
     horizontalNet: net.horizontalNet,
-    direction: net.direction,
-    requestedDistance: net.requestedDistance,
+    direction: finale ? null : net.direction,
+    requestedDistance: finale ? 0 : net.requestedDistance,
     actualDistance: movement.actualDistance,
     blockedByBoundary: movement.blockedByBoundary,
-    tie: net.tie,
+    tie: finale ? false : net.tie,
     finalPosition: cell(s.queenPosition.r, s.queenPosition.c),
     path: movement.path,
     winner: s.winner,
+    draw: !!s.draw,
+    /**
+     * Public: where the cannonballs landed and which castles fell. Never who
+     * fired — shots are anonymous. Whether a crater hid a treasure is known
+     * only to that treasure's owner, via the private slice below.
+     */
+    explosions: cannon.explosions.map((e) => ({ position: cell(e.position.r, e.position.c), castleSeat: e.castleSeat })),
+    eliminated: cannon.eliminated.slice(),
+    /** The last castle standing: the queen walked to it without a bid. */
+    finale: finale && winnerSeat !== null ? { seat: winnerSeat } : null,
     /** Private slice, filtered per seat by createPlayerView. */
-    _private: { collection },
+    _private: { collection, treasureHits: cannon.treasureHits },
     events,
   };
   s.lastResolution = resolution;
@@ -2481,6 +2902,8 @@ function resolveRound(state, { now = Date.now() } = {}) {
     blockedByBoundary: movement.blockedByBoundary,
     bonuses: bonusesAtRoundStart,
     collected: collection ? { seat: collection.seat, position: collection.position, reward: collection.reward } : null,
+    explosions: resolution.explosions.map((e) => ({ ...e })),
+    finale: resolution.finale,
     winner: s.winner,
   });
 
@@ -2550,13 +2973,22 @@ function publicResolution(resolution, seat) {
     finalPosition: resolution.finalPosition,
     path: resolution.path, // this round's segment only — never the full history
     winner: resolution.winner,
+    draw: !!resolution.draw,
+    /** Where cannonballs landed and whose castles fell. Never who fired. */
+    explosions: (resolution.explosions || []).map((e) => ({ position: cell(e.position.r, e.position.c), castleSeat: e.castleSeat })),
+    eliminated: (resolution.eliminated || []).slice(),
+    finale: resolution.finale ? { ...resolution.finale } : null,
     /** Filled only for the seat it belongs to. */
     yourBonusCollected: null,
+    /** Your own treasure was destroyed this round. Nobody else learns this. */
+    yourTreasureDestroyed: null,
   };
   const collection = resolution._private?.collection;
   if (collection && collection.seat === seat) {
     out.yourBonusCollected = { reward: collection.reward, position: collection.position };
   }
+  const hit = (resolution._private?.treasureHits || []).find((h) => h.seat === seat);
+  if (hit) out.yourTreasureDestroyed = { position: cell(hit.position.r, hit.position.c) };
   return out;
 }
 
@@ -2569,7 +3001,10 @@ function createPlayerView(state, seat) {
   if (!player) throw new Error(`No such seat: ${seat}`);
 
   const alloc = state.coinAllocationState[seat];
-  const bonus = state.activeBonuses[seat];
+  const rawBonus = state.activeBonuses[seat];
+  /** A treasure destroyed by cannon fire is a ghost: its owner sees it gone. */
+  const bonus = rawBonus && !rawBonus.destroyed ? rawBonus : null;
+  const eliminated = (state.eliminatedSeats || []).includes(seat);
   const bid = state.currentRoundBids[seat] || emptyBid();
 
   const view = {
@@ -2588,7 +3023,13 @@ function createPlayerView(state, seat) {
       replenishCoins: state.config.replenishCoins,
         bonusStartReward: state.config.bonusStartReward,
       playerCount: state.config.playerCount,
+      cannonballsPerPlayer: state.config.cannonballsPerPlayer,
     },
+
+    /** Every cell a cannonball has struck. Public and permanent. */
+    craters: (state.craters || []).map((p) => cell(p.r, p.c)),
+    /** Castles destroyed by cannon fire. Public: everyone saw them fall. */
+    ruins: (state.eliminatedSeats || []).map((s) => ({ seat: s, position: cell(state.castles[s].r, state.castles[s].c) })),
 
     /* ---- Everything this player privately owns (§5.2) ---- */
     you: {
@@ -2604,6 +3045,15 @@ function createPlayerView(state, seat) {
       currentBid: { ...bid },
       currentBidTotal: bidTotal(bid),
       locked: state.lockedSeats.includes(seat),
+      /**
+       * Your own cannonballs. Never shown for anyone else: shots are
+       * anonymous, and a rival's falling count would name the shooter.
+       */
+      cannonballs: (state.cannonballs || [])[seat] ?? 0,
+      /** Your castle has fallen. You watch the rest of the game. */
+      eliminated,
+      /** Your treasure was destroyed and has not yet been replaced. */
+      treasureLost: !!(rawBonus && rawBonus.destroyed),
     },
 
     /**
@@ -2623,6 +3073,8 @@ function createPlayerView(state, seat) {
         locked: state.lockedSeats.includes(p.seat),
         /** Left a humans-only game; nobody is covering the seat. */
         retired: (state.retiredSeats || []).includes(p.seat),
+        /** Their castle was destroyed by cannon fire. */
+        eliminated: (state.eliminatedSeats || []).includes(p.seat),
       })),
 
     lastResolution: publicResolution(state.lastResolution, seat),
@@ -2645,7 +3097,10 @@ function createRevealView(state) {
     seed: state.seed,
     board: { width: state.boardWidth, height: state.boardHeight },
     winner: state.winner,
+    draw: !!state.draw,
     winnerName: state.winner !== null ? state.players[state.winner].displayName : null,
+    craters: (state.craters || []).map((p) => cell(p.r, p.c)),
+    eliminatedSeats: (state.eliminatedSeats || []).slice(),
     roundsPlayed: state.metrics.rounds,
     players: state.players.map((p) => ({
       seat: p.seat,
@@ -2694,6 +3149,13 @@ function auditViewForLeaks(state, seat) {
   if ('activeBonuses' in view) problems.push('Bonus array exposed');
   if ('currentRoundBids' in view) problems.push('Raw round bids exposed');
   if ('coinAllocationState' in view) problems.push('Coin allocation array exposed');
+  for (const o of view.opponents) {
+    if ('cannonballs' in o) problems.push(`Opponent ${o.seat} exposes cannonballs — that would name the shooter`);
+  }
+  if ('cannonballs' in view) problems.push('Cannonball array exposed');
+  if (view.lastResolution && JSON.stringify(view.lastResolution).includes('shooter')) {
+    problems.push('A shot was attributed to its shooter');
+  }
   if ('seed' in view) problems.push('RNG seed exposed — future placements predictable');
   if ('rngState' in view) problems.push('RNG cursor exposed');
   if ('bonusLedger' in view) problems.push('Bonus ledger exposed');
@@ -2868,7 +3330,65 @@ function interferenceModel(view, dir, personality) {
  * @param {object} view  A PlayerView — the same object a human client receives.
  * @param {object} opts  { rngSeed } for reproducible AI behaviour.
  */
-function decideBid(view, { rngSeed } = {}) {
+function decideBid(view, opts = {}) {
+  const bid = decideCoins(view, opts);
+  const shot = decideShot(view, opts);
+  if (shot) bid.shot = shot;
+  return bid;
+}
+
+/**
+ * Cannon fire from public information only — the same view a human has.
+ *
+ * Last round's surviving pull says where the table wanted the queen to go, and
+ * somebody wanted her to go there for a reason: their castle, or their
+ * treasure, probably lies a few cells further along that line. A bot aims a
+ * little past where she stopped, and only fires now and then, so shots stay
+ * rare enough to feel like events. It never fires in the opening rounds,
+ * before there is anything to read.
+ */
+function decideShot(view, { rngSeed } = {}) {
+  if (view.status !== 'PLAYING' || view.you.eliminated) return null;
+  if (!(view.you.cannonballs > 0)) return null;
+  if (view.roundNumber < 4) return null;
+  const last = view.lastResolution;
+  if (!last || !last.direction || last.actualDistance <= 0) return null;
+
+  const seat = view.you.seat;
+  const rng = standaloneRng(`${rngSeed ?? view.gameId}-${seat}-${view.roundNumber}-cannon`);
+  // Roughly one shot every six rounds or so, a little more eager when the
+  // pull was strong and deliberate.
+  const eagerness = Math.min(0.3, 0.12 + last.actualDistance * 0.02);
+  if (rng.next() > eagerness) return null;
+
+  const m = view.board.boundaryMargin ?? 1;
+  const inner = (p) => p.r >= m && p.c >= m && p.r <= view.board.height - 1 - m && p.c <= view.board.width - 1 - m;
+  const same = (a, b) => a && b && a.r === b.r && a.c === b.c;
+  const blocked = (p) =>
+    !inner(p) ||
+    same(p, view.queenPosition) ||
+    same(p, view.you.castlePosition) ||
+    same(p, view.you.activeBonus?.position) ||
+    (view.craters || []).some((c) => same(c, p));
+
+  const v = VECTORS[last.direction];
+  const from = last.finalPosition;
+  const reach = 1 + Math.floor(rng.next() * 3);
+  // Along the line first, then a cell to either side of it.
+  const side = v.dr === 0 ? { dr: 1, dc: 0 } : { dr: 0, dc: 1 };
+  const candidates = [];
+  for (let k = reach; k <= reach + 2; k++) {
+    const base = { r: from.r + v.dr * k, c: from.c + v.dc * k };
+    candidates.push(base);
+    candidates.push({ r: base.r + side.dr, c: base.c + side.dc });
+    candidates.push({ r: base.r - side.dr, c: base.c - side.dc });
+  }
+  const target = candidates.find((p) => !blocked(p));
+  return target ? { r: target.r, c: target.c } : null;
+}
+
+/** Coins only — where to stake this round. */
+function decideCoins(view, { rngSeed } = {}) {
   const empty = { UP: 0, DOWN: 0, LEFT: 0, RIGHT: 0 };
   const balance = view.you.coinsRemaining;
   if (balance <= 0 || view.status !== 'PLAYING') return empty;
@@ -3354,6 +3874,40 @@ const RECIPES = {
     bell({ freq: 220, dur: 0.5, gain: 0.2, start: 0.03 });
   },
 
+  /** A cannonball rolled into place: iron on stone. */
+  cannonLoad() {
+    noise({ dur: 0.09, gain: 0.4, freq: 700, type: 'lowpass' });
+    voice({ type: 'triangle', from: 170, to: 120, dur: 0.14, gain: 0.3 });
+    chink({ freq: 1300, start: 0.02, gain: 0.12 });
+  },
+
+  /** A cannonball taken back. */
+  cannonUnload() {
+    voice({ type: 'triangle', from: 130, to: 190, dur: 0.12, gain: 0.22 });
+    noise({ dur: 0.06, gain: 0.18, freq: 900, type: 'lowpass' });
+  },
+
+  /**
+   * A cannonball lands. A low thump for the body (felt more than heard on a
+   * laptop), a wide crackle for the blast, and falling debris behind it.
+   */
+  boom() {
+    voice({ type: 'sine', from: 120, to: 38, dur: 0.7, gain: 0.55 });
+    voice({ type: 'triangle', from: 240, to: 60, dur: 0.35, gain: 0.3 });
+    noise({ dur: 0.9, gain: 0.7, freq: 1100, type: 'lowpass' });
+    noise({ dur: 0.35, gain: 0.35, freq: 3200, type: 'bandpass', q: 0.7 });
+    for (let i = 0; i < 5; i++) {
+      noise({ start: 0.22 + i * 0.09 + Math.random() * 0.05, dur: 0.06, gain: 0.12, freq: 1800 + Math.random() * 1400, type: 'bandpass', q: 3 });
+    }
+  },
+
+  /** A castle falls. A tolling low bell after the blast. */
+  castleFall() {
+    bell({ freq: 146.8, dur: 2.2, gain: 0.34, start: 0.25 });
+    bell({ freq: 138.6, dur: 2.0, gain: 0.26, start: 0.27 });
+    bell({ freq: 110.0, dur: 2.6, gain: 0.3, start: 0.95 });
+  },
+
   /** Treasure claimed. A bright cascade over a held root. */
   bonus() {
     [523.3, 659.3, 784.0, 1046.5].forEach((f, i) => chink({ freq: f * 2, start: i * 0.07, gain: 0.26 }));
@@ -3649,7 +4203,12 @@ function createHost({
           // receives. It has no other route to game information (§13).
           const view = createPlayerView(state, player.seat);
           const bid = decideBid(view, { rngSeed: state.seed });
-          const r = lockBid(state, player.seat, bid);
+          let r = lockBid(state, player.seat, bid);
+          // A shot the rules refuse must never stall the round: keep the coins.
+          if (!r.ok && bid.shot) {
+            const { shot, ...coinsOnly } = bid;
+            r = lockBid(state, player.seat, coinsOnly);
+          }
           if (r.ok) {
             state = r.state;
             emit('seat-locked', { seat: player.seat });
@@ -3779,6 +4338,7 @@ function createHost({
           connectionStatus: p.connectionStatus,
           locked: state.lockedSeats.includes(p.seat),
           retired: (state.retiredSeats || []).includes(p.seat),
+          eliminated: (state.eliminatedSeats || []).includes(p.seat),
         })),
       };
     },
@@ -4474,6 +5034,73 @@ const ART = {
     </g>
   </svg>`,
 
+  /**
+   * A cast-iron cannonball: dark and heavy, with one cold highlight and a
+   * thin gold rim so it belongs to the same treasury as the coins.
+   */
+  cannonball: () => {
+    const g = uid('cb');
+    return `<svg viewBox="0 0 40 40" aria-hidden="true">
+    <defs>
+      <radialGradient id="${g}" cx="34%" cy="30%" r="75%">
+        <stop offset="0" stop-color="#8d97a8"/><stop offset=".28" stop-color="#4a5262"/><stop offset=".75" stop-color="#1c2029"/><stop offset="1" stop-color="#0b0d12"/>
+      </radialGradient>
+    </defs>
+    <circle cx="20" cy="20.6" r="17.6" fill="rgba(0,0,0,.45)"/>
+    <circle cx="20" cy="19.4" r="17" fill="url(#${g})" stroke="#b58a2c" stroke-width="1.2"/>
+    <ellipse cx="13.6" cy="12.6" rx="4.6" ry="3" fill="rgba(255,255,255,.34)" transform="rotate(-32 13.6 12.6)"/>
+    <path d="M9 27.5a14 14 0 0 0 19.5 3.2" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="1.4" stroke-linecap="round"/>
+  </svg>`;
+  },
+
+  /** Where a cannonball landed: scorched stone, a blackened pit, cooling embers. */
+  crater: () => {
+    const g = uid('cr');
+    return `<svg viewBox="0 0 40 40" aria-hidden="true">
+    <defs>
+      <radialGradient id="${g}" cx="50%" cy="50%" r="50%">
+        <stop offset="0" stop-color="#050608"/><stop offset=".4" stop-color="#2b1d12"/><stop offset=".7" stop-color="#7a5430" stop-opacity=".9"/><stop offset="1" stop-color="#7a5430" stop-opacity="0"/>
+      </radialGradient>
+    </defs>
+    <path fill="url(#${g})" d="M20 2l3.2 7.4 7.6-4-2.4 8 8.4.8-6.4 5.6 6.8 5-8.4 1.4 2.6 8-7.6-3.6L20 38l-3.8-7.4-7.6 3.6 2.6-8-8.4-1.4 6.8-5-6.4-5.6 8.4-.8-2.4-8 7.6 4z"/>
+    <ellipse cx="20" cy="20.6" rx="8.4" ry="7.4" fill="none" stroke="rgba(255,140,60,.45)" stroke-width="1.6"/>
+    <ellipse cx="20" cy="20.6" rx="7.4" ry="6.4" fill="#040506" stroke="rgba(170,120,70,.7)" stroke-width="1"/>
+    <g fill="#ff9a3c">
+      <circle cx="13.5" cy="15" r=".9" opacity=".75"/><circle cx="27" cy="17" r=".7" opacity=".6"/>
+      <circle cx="24.5" cy="27" r=".9" opacity=".7"/><circle cx="14" cy="26" r=".6" opacity=".55"/>
+    </g>
+  </svg>`;
+  },
+
+  /** A castle brought down by cannon fire: broken battlements, a split wall. */
+  ruin: (color) => `<svg viewBox="0 0 36 34" aria-hidden="true">
+    <g stroke="rgba(0,0,0,.6)" stroke-width="1.1" stroke-linejoin="round">
+      <path fill="${color}" d="M3 32V17l2-3.5 2.6 1.8L9 11l3.4 3 1.8-5.4 3.6 4.6L19 22l-3 10zM20 32l2.6-8.4 1.4-7 3.5 2.2L29 14l2.4 3.6L35 16.6V32z"/>
+      <path fill="rgba(0,0,0,.45)" stroke="none" d="M12 32l1.6-6h3.2L15.4 32z"/>
+    </g>
+    <path d="M17.8 11.6l1.6 5.2-2 4.4 2.4 3.8-1.4 7" fill="none" stroke="#0b0d12" stroke-width="1.6" stroke-linecap="round"/>
+    <g fill="${color}" stroke="rgba(0,0,0,.55)" stroke-width=".8" opacity=".85">
+      <path d="M7 31.4l2.4-1.2 1.4 1.6z"/><path d="M26 31.6l2-2 2 2z"/><path d="M31.5 31.5l1.2-1.4 1 1.4z"/>
+    </g>
+  </svg>`,
+
+  /** The blast itself: a hot white core inside ragged gold-orange rays. */
+  blast: () => {
+    const g = uid('bl');
+    return `<svg viewBox="0 0 100 100" aria-hidden="true">
+    <defs>
+      <radialGradient id="${g}" cx="50%" cy="50%" r="50%">
+        <stop offset="0" stop-color="#ffffff"/><stop offset=".22" stop-color="#fff3c4"/><stop offset=".5" stop-color="#ffb43c"/><stop offset=".78" stop-color="#e2521f" stop-opacity=".75"/><stop offset="1" stop-color="#e2521f" stop-opacity="0"/>
+      </radialGradient>
+    </defs>
+    <path fill="url(#${g})" d="M50 2l7 26 20-19-8 27 28-4-24 16 25 12-28 2 16 24-24-15-2 29-10-27-12 25 1-28-24 13 16-23-27-4 26-11-22-18 28 6-9-27 21 18z"/>
+    <circle cx="50" cy="50" r="13" fill="#fffdf2"/>
+  </svg>`;
+  },
+
+  /** Over a fallen player's icon. */
+  fallen: `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M5 5l14 14M19 5L5 19"/></svg>`,
+
   /** A struck gold coin, milled edge and all. */
   coin: () => {
     const g = uid('cf');
@@ -4580,6 +5207,10 @@ const app = {
    * staking gesture, so it is correct even when the timer locks for you.
    */
   stagedBid: null,
+  /** Tap-to-aim: the cannonball rack was tapped and the next board tap aims it. */
+  aiming: false,
+  /** A cannonball being dragged: { from: 'rack' | 'shot', ghost, x0, y0, moved }. */
+  aimDrag: null,
   /** Bumped whenever a game is mounted or torn down; in-flight animations
    *  belonging to an older generation abandon themselves. */
   epoch: 0,
@@ -4855,7 +5486,13 @@ function renderTug(res, myBid, { nearMiss = false } = {}) {
   let hubCls = 'tug-hub';
   let hubMove = '';
   let hubTitle;
-  if (spent === 0) {
+  if (res.finale) {
+    hubMove = `<b class="move">${ART.castle(SEAT_COLORS[res.finale.seat])}</b>`;
+    hubTitle = 'Only one castle stood, so she went straight to it';
+  } else if (res.draw) {
+    hubCls += ' still';
+    hubTitle = 'No castle was left standing';
+  } else if (spent === 0) {
     hubCls += ' still';
     hubTitle = 'Nobody spent a coin, so she stayed put';
   } else if (!winner) {
@@ -5358,6 +5995,7 @@ function onHostEvent(evt) {
     case 'round-open':
       app.animating = false;
       app.stagedBid = null;
+      app.aiming = false;
       sound.play('roundStart');
       render();
       break;
@@ -5408,6 +6046,11 @@ function render() {
   if (!app.game) return;
   const view = app.game.getView();
   if (!view) return;
+  // The round closed, or the last ball is gone: stop aiming.
+  if (app.aiming && !canAim(view)) {
+    app.aiming = false;
+    paintAimCells(null);
+  }
   renderSeatChips();
   // While the queen is walking, the board belongs to the animation. Redrawing
   // markers here was making the NEXT round's treasure appear before the queen
@@ -5417,6 +6060,7 @@ function render() {
     renderTargets(view);
   }
   renderPurse(view);
+  renderAmmo(view);
   renderStatus(view);
   renderTimer();
 }
@@ -5437,11 +6081,16 @@ function renderSeatChips() {
     // A retired seat is a person who left a humans-only game. Nobody is
     // playing it, so it must not read as either a live player or a bot.
     if (seat.retired) chip.classList.add('retired');
+    // Castle destroyed by cannon fire: still watching, no longer playing.
+    if (seat.eliminated) chip.classList.add('fallen');
     chip.appendChild(el('span', 'avatar', seat.controlMode === CONTROL_MODE.HUMAN ? ART.human : ART.bot));
     chip.appendChild(el('span', 'lock-badge', ART.lockClosed));
+    if (seat.eliminated) chip.appendChild(el('span', 'fallen-mark', ART.fallen));
     // Identity is carried entirely by colour and icon; the title is for
     // screen readers and hover only.
-    chip.title = seat.retired
+    chip.title = seat.eliminated
+      ? `Castle destroyed — out of the game${seat.seat === app.seat ? ' (you)' : ''}`
+      : seat.retired
       ? 'Left the game'
       : `${seat.controlMode === CONTROL_MODE.HUMAN ? 'Player' : 'Computer'}${
           seat.seat === app.seat ? ' (you)' : ''
@@ -5453,13 +6102,18 @@ function renderSeatChips() {
 function renderMarkers(view) {
   const overlay = $('#board-overlay');
   // Rebuild everything EXCEPT the queen, which must persist across renders.
-  for (const node of $$('.castle-mark, .bonus-mark', overlay)) node.remove();
+  for (const node of $$('.castle-mark, .bonus-mark, .crater-mark, .ruin-mark, .shot-mark', overlay)) node.remove();
 
-  const castle = el('div', 'marker castle-mark mine', ART.castle(SEAT_COLORS[view.you.seat]));
-  castle.style.color = SEAT_COLORS[view.you.seat];
-  placeMarker(castle, view.you.castlePosition);
-  castle.title = 'Your castle — nobody else can see it';
-  overlay.appendChild(castle);
+  renderCraters(view, overlay);
+
+  // A fallen castle is drawn as rubble with everyone else's, not as yours.
+  if (!view.you.eliminated) {
+    const castle = el('div', 'marker castle-mark mine', ART.castle(SEAT_COLORS[view.you.seat]));
+    castle.style.color = SEAT_COLORS[view.you.seat];
+    placeMarker(castle, view.you.castlePosition);
+    castle.title = 'Your castle — nobody else can see it';
+    overlay.appendChild(castle);
+  }
 
   if (view.you.activeBonus && view.you.activeBonus.reward > 0) {
     const b = view.you.activeBonus;
@@ -5471,6 +6125,8 @@ function renderMarkers(view) {
     mark.title = 'Your treasure — land exactly here to claim it';
     overlay.appendChild(mark);
   }
+
+  renderShotMark(view, overlay);
 
   const queen = ensureQueen(overlay);
   if (!app.animating) placeMarker(queen, view.queenPosition);
@@ -5546,6 +6202,14 @@ function renderStatus(view) {
   const status = $('#status');
   if (!app.started || app.animating) return;
 
+  if (view.you.eliminated) {
+    status.innerHTML = 'Your castle has fallen. Watch how the battle ends.';
+    return;
+  }
+  if (app.aiming && canAim(view)) {
+    status.innerHTML = 'Tap a cell to aim your cannonball.';
+    return;
+  }
   if (view.you.locked) {
     const waiting = view.opponents.filter((o) => !o.locked).length;
     status.innerHTML = waiting
@@ -5557,10 +6221,14 @@ function renderStatus(view) {
     status.innerHTML = "You're out of coins. Pass. Everyone refills when all four are empty.";
     return;
   }
+  if (view.you.currentBidTotal > 0 || view.you.currentBid.shot) {
+    status.innerHTML = 'Tap the queen to lock your bid.';
+    return;
+  }
   status.innerHTML =
-    view.you.currentBidTotal > 0
-      ? 'Tap the queen to lock your bid.'
-      : 'Tap the direction to stake the coins to lure the queen.';
+    view.you.cannonballs > 0
+      ? 'Stake coins to lure the queen. Drag a cannonball to strike others.'
+      : 'Stake coins to lure the queen.';
 }
 
 function renderTimer() {
@@ -5615,6 +6283,11 @@ function planningAllowed(view) {
 
 function onBoardClick(e) {
   const cell = e.target.closest('.cell');
+  // Tap-to-aim: the next tap on the board chooses the target, never a coin.
+  if (app.aiming) {
+    if (cell) aimAt(Number(cell.dataset.r), Number(cell.dataset.c));
+    return;
+  }
   if (!cell || !cell.dataset.dir) return;
   if (app.suppressClick) {
     app.suppressClick = false;
@@ -5632,6 +6305,7 @@ function onBoardClick(e) {
 function wireCoinRemoval(root) {
   let timer = null;
   const start = (e) => {
+    if (app.aiming) return;
     const cell = e.target.closest?.('.cell');
     if (!cell || !cell.dataset.dir) return;
     timer = setTimeout(() => {
@@ -5739,7 +6413,256 @@ function lockIn() {
   }
   sound.play('lock');
   app.placements = [];
+  endAiming();
   render();
+}
+
+/* ------------------------------------------------------------------ *
+ * Cannon fire — aiming
+ *
+ * A shot is part of the round's plan: it rides inside the bid as `shot`, is
+ * staged and locked with the coins, and the server validates it the same way.
+ * Two ways to aim, both always available:
+ *   · drag a cannonball from the rack onto a cell (mouse or finger), or
+ *   · tap the rack, then tap a cell.
+ * An aimed ball sits on its cell with a gold crosshair. Tap it, or drag it
+ * off the board, to take it back; drag it to another cell to move it.
+ * ------------------------------------------------------------------ */
+
+/** 'three' reads better than '3' in the rules. */
+const numberWord = (n) => ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'][n] ?? String(n);
+
+const sameRC = (a, b) => !!a && !!b && a.r === b.r && a.c === b.c;
+
+function canAim(view) {
+  return !!view && planningAllowed(view) && !view.you.eliminated && view.you.cannonballs > 0;
+}
+
+/** Mirrors the engine's rule, so the board can show what the server will accept. */
+function shotAllowedAt(view, r, c) {
+  const m = view.board.boundaryMargin ?? 1;
+  if (r < m || c < m || r > view.board.height - 1 - m || c > view.board.width - 1 - m) return false;
+  const p = { r, c };
+  if (sameRC(p, view.queenPosition)) return false;
+  if (sameRC(p, view.you.castlePosition)) return false;
+  if (sameRC(p, view.you.activeBonus?.position)) return false;
+  if ((view.craters || []).some((q) => sameRC(q, p))) return false;
+  return true;
+}
+
+function aimAt(r, c) {
+  const view = app.game.getView();
+  if (!canAim(view)) return endAiming();
+  if (!shotAllowedAt(view, r, c)) {
+    sound.play('deny');
+    toast(aimRefusal(view, r, c), 'bad');
+    return;
+  }
+  endAiming();
+  setShot({ r, c });
+}
+
+/** Why that cell cannot be aimed at, in the player's words. */
+function aimRefusal(view, r, c) {
+  const p = { r, c };
+  if (sameRC(p, view.you.castlePosition)) return "That's your own castle.";
+  if (sameRC(p, view.you.activeBonus?.position)) return "That's your own treasure.";
+  if (sameRC(p, view.queenPosition)) return "You can't fire at the queen.";
+  if ((view.craters || []).some((q) => sameRC(q, p))) return 'That cell is already a crater.';
+  return 'Nothing stands on the edge of the board.';
+}
+
+function setShot(target) {
+  const view = app.game.getView();
+  if (!planningAllowed(view)) return;
+  const bid = { ...view.you.currentBid };
+  if (target) bid.shot = { r: target.r, c: target.c };
+  else delete bid.shot;
+  const r = app.game.stageBid(app.seat, bid);
+  if (!r.ok) {
+    sound.play('deny');
+    if (r.error) toast(r.error, 'bad');
+    return;
+  }
+  sound.play(target ? 'cannonLoad' : 'cannonUnload');
+  app.stagedBid = { ...bid };
+  render();
+}
+
+function startAiming() {
+  const view = app.game?.getView();
+  if (!canAim(view)) return;
+  app.aiming = true;
+  paintAimCells(view);
+  render();
+}
+
+function endAiming() {
+  const was = app.aiming;
+  app.aiming = false;
+  paintAimCells(null);
+  if (was) render();
+}
+
+/** Light the cells a shot may land on; dim everything else. */
+function paintAimCells(view) {
+  const board = $('#board');
+  const on = !!view && (app.aiming || !!app.aimDrag);
+  board.classList.toggle('aim-mode', on);
+  for (const cell of $$('#board-cells .cell')) {
+    cell.classList.toggle('aimable', on && shotAllowedAt(view, Number(cell.dataset.r), Number(cell.dataset.c)));
+    cell.classList.remove('aim-hover');
+  }
+}
+
+/** The rack: one iron ball per cannonball, spent ones as empty sockets. */
+function renderAmmo(view) {
+  const rack = $('#ammo');
+  if (!rack) return;
+  const total = view.config.cannonballsPerPlayer ?? 0;
+  if (!total) {
+    rack.hidden = true;
+    return;
+  }
+  rack.hidden = false;
+  const left = view.you.cannonballs ?? 0;
+  const aimed = !!view.you.currentBid?.shot;
+  const armed = canAim(view);
+  rack.classList.toggle('armed', armed);
+  rack.classList.toggle('aiming', app.aiming && armed);
+  rack.classList.toggle('fallen', !!view.you.eliminated);
+
+  const key = `${total}|${left}|${aimed}`;
+  if (rack.dataset.key !== key) {
+    rack.dataset.key = key;
+    rack.innerHTML = '';
+    for (let i = 0; i < total; i++) {
+      // Balls are used from the right, so the rack empties toward its start.
+      const state = i >= left ? 'spent' : aimed && i === left - 1 ? 'aimed' : 'ready';
+      const ball = el('span', `ammo-ball ${state}`, state === 'spent' ? '' : ART.cannonball());
+      rack.appendChild(ball);
+    }
+  }
+  const ready = left - (aimed ? 1 : 0);
+  rack.title = view.you.eliminated
+    ? 'Your castle has fallen'
+    : left === 0
+    ? 'No cannonballs left'
+    : aimed
+    ? 'Aimed for this round — tap the ball on the board to take it back'
+    : armed
+    ? `${ready} cannonball${ready === 1 ? '' : 's'} left. Drag one onto a cell, or tap here then tap a cell. One per round.`
+    : `${ready} cannonball${ready === 1 ? '' : 's'} left`;
+  rack.setAttribute('aria-label', rack.title);
+}
+
+function renderCraters(view, overlay) {
+  for (const p of view.craters || []) {
+    const mark = el('div', 'marker crater-mark', ART.crater());
+    placeMarker(mark, p);
+    mark.title = 'Crater — a cannonball landed here';
+    overlay.appendChild(mark);
+  }
+  for (const r of view.ruins || []) {
+    const mark = el('div', 'marker ruin-mark', ART.ruin(SEAT_COLORS[r.seat]));
+    placeMarker(mark, r.position);
+    mark.title = r.seat === view.you.seat ? 'Your castle, destroyed' : 'A castle destroyed by cannon fire';
+    overlay.appendChild(mark);
+  }
+}
+
+function renderShotMark(view, overlay) {
+  const shot = view.you.currentBid?.shot;
+  if (!shot || view.status !== 'PLAYING') return;
+  const mark = el('div', 'marker shot-mark', `<span class="crosshair"></span>${ART.cannonball()}`);
+  placeMarker(mark, shot);
+  const live = planningAllowed(view);
+  mark.classList.toggle('live', live);
+  mark.title = live ? 'Your cannonball — tap to take it back, or drag it elsewhere' : 'Your cannonball fires when the round resolves';
+  overlay.appendChild(mark);
+}
+
+/* ---- dragging ---- */
+
+function beginAimDrag(e, from) {
+  const view = app.game?.getView();
+  if (!canAim(view)) return;
+  if (from === 'rack' && !e.target.closest('.ammo-ball.ready, .ammo-ball.aimed')) return;
+  e.preventDefault();
+  const ghost = el('div', 'drag-ball', ART.cannonball());
+  ghost.hidden = true;
+  document.body.appendChild(ghost);
+  app.aimDrag = { from, ghost, x0: e.clientX, y0: e.clientY, moved: false, pointerId: e.pointerId };
+  window.addEventListener('pointermove', moveAimDrag);
+  window.addEventListener('pointerup', endAimDrag);
+  window.addEventListener('pointercancel', cancelAimDrag);
+}
+
+function cellUnder(x, y) {
+  const hit = document.elementFromPoint(x, y);
+  const cell = hit?.closest?.('#board-cells .cell');
+  if (cell) return cell;
+  // Markers sit above the cells; fall back to geometry.
+  const board = $('#board-cells').getBoundingClientRect();
+  if (x < board.left || x > board.right || y < board.top || y > board.bottom) return null;
+  const view = app.game.getView();
+  const c = Math.floor(((x - board.left) / board.width) * view.board.width);
+  const r = Math.floor(((y - board.top) / board.height) * view.board.height);
+  return $(`#board-cells .cell[data-r="${r}"][data-c="${c}"]`);
+}
+
+function moveAimDrag(e) {
+  const d = app.aimDrag;
+  if (!d || e.pointerId !== d.pointerId) return;
+  if (!d.moved && Math.hypot(e.clientX - d.x0, e.clientY - d.y0) < 6) return;
+  if (!d.moved) {
+    d.moved = true;
+    d.ghost.hidden = false;
+    app.aiming = false;
+    paintAimCells(app.game.getView());
+    $('.shot-mark', $('#board-overlay'))?.classList.add('lifted');
+  }
+  d.ghost.style.transform = `translate(${e.clientX}px, ${e.clientY}px)`;
+  const cell = cellUnder(e.clientX, e.clientY);
+  for (const c of $$('#board-cells .cell.aim-hover')) if (c !== cell) c.classList.remove('aim-hover');
+  if (cell?.classList.contains('aimable')) cell.classList.add('aim-hover');
+}
+
+function endAimDrag(e) {
+  const d = app.aimDrag;
+  if (!d || e.pointerId !== d.pointerId) return;
+  teardownAimDrag();
+  if (!d.moved) {
+    // A tap, not a drag.
+    if (d.from === 'shot') setShot(null);
+    else if (app.aiming) endAiming();
+    else startAiming();
+    return;
+  }
+  const cell = cellUnder(e.clientX, e.clientY);
+  if (cell) {
+    aimAt(Number(cell.dataset.r), Number(cell.dataset.c));
+    render();
+  } else if (d.from === 'shot') {
+    setShot(null); // dragged off the board: taken back
+  } else {
+    render();
+  }
+}
+
+function cancelAimDrag() {
+  teardownAimDrag();
+  render();
+}
+
+function teardownAimDrag() {
+  const d = app.aimDrag;
+  if (d?.ghost) d.ghost.remove();
+  app.aimDrag = null;
+  window.removeEventListener('pointermove', moveAimDrag);
+  window.removeEventListener('pointerup', endAimDrag);
+  window.removeEventListener('pointercancel', cancelAimDrag);
+  paintAimCells(app.aiming ? app.game?.getView() : null);
 }
 
 /* ------------------------------------------------------------------ *
@@ -5772,9 +6695,26 @@ async function playResolution() {
   // Clear the staked coins from the board now that they are spent.
   renderTargets({ ...view, you: { ...view.you, currentBid: { UP: 0, DOWN: 0, LEFT: 0, RIGHT: 0 } } });
   renderPurse(view);
+  endAiming();
+
+  // Cannon fire lands first, in front of everyone, before the queen stirs.
+  if (res.explosions?.length) {
+    await playCannonFire(res, view);
+    if (!alive()) return;
+  }
   renderSeatChips();
 
-  if (res.tie) {
+  if (res.draw) {
+    sound.play('noMove');
+    status.innerHTML = `<span class="verdict">No castle is left standing.</span>`;
+    await wait(UI_TIMING.cancelAnimMs + 500);
+  } else if (res.finale) {
+    sound.play('moveStart');
+    status.innerHTML = `<span class="verdict">Only one castle stands. The queen goes to it.</span>`;
+    await wait(UI_TIMING.cancelAnimMs + 400);
+    await walkQueen(res);
+    sound.play('moveEnd');
+  } else if (res.tie) {
     // Deliberately unresolved: a stalemate must never sound like progress.
     sound.play('noMove');
     status.innerHTML = `<span class="verdict">The forces cancel. The queen holds her ground.</span>`;
@@ -5798,6 +6738,7 @@ async function playResolution() {
    */
   const castle = view.you.castlePosition;
   const passedOver =
+    !view.you.eliminated &&
     res.winner === null &&
     res.path.length > 1 &&
     res.path.slice(0, -1).some((p) => p.r === castle.r && p.c === castle.c);
@@ -5827,7 +6768,7 @@ async function playResolution() {
   const after = app.game.getView();
   if (after && after.status === 'FINISHED') {
     app.animating = false;
-    sound.play('victory');
+    if (!res.draw) sound.play('victory');
     await wait(700);
     showResult();
     return;
@@ -5835,6 +6776,77 @@ async function playResolution() {
   app.animating = false;
   status.innerHTML = '';
   render();
+}
+
+/**
+ * The cannonballs land. Every explosion is public, so every player sees the
+ * same thing: the blast, the crater it leaves, and any castle it brings down.
+ * What they do NOT see is who fired, or whether a crater swallowed somebody's
+ * treasure — only that treasure's owner watches it vanish.
+ */
+async function playCannonFire(res, view) {
+  const overlay = $('#board-overlay');
+  const plate = $('#screen-game .board-plate');
+  const status = $('#status');
+  const n = res.explosions.length;
+  const lost = view.lastResolution?.yourTreasureDestroyed?.position || null;
+
+  // Your own aimed ball is in the air now.
+  for (const m of $$('.shot-mark', overlay)) m.remove();
+  status.innerHTML = `<span class="verdict">${
+    n === 1 ? 'A cannonball flies…' : `${numberWord(n).replace(/^./, (c) => c.toUpperCase())} cannonballs fly…`
+  }</span>`;
+  await wait(Math.max(200, UI_TIMING.cancelAnimMs * 0.45));
+
+  res.explosions.forEach((x, i) => {
+    setTimeout(() => {
+      sound.play('boom');
+      plate?.classList.remove('shake');
+      void plate?.offsetWidth;
+      plate?.classList.add('shake');
+
+      const blast = el('div', 'marker blast-mark', `<span class="shock"></span>${ART.blast()}`);
+      placeMarker(blast, x.position);
+      overlay.appendChild(blast);
+      setTimeout(() => blast.remove(), 1200);
+
+      // The crater is there the moment the smoke clears, and stays.
+      setTimeout(() => {
+        const crater = el('div', 'marker crater-mark fresh', ART.crater());
+        placeMarker(crater, x.position);
+        crater.title = 'Crater — a cannonball landed here';
+        overlay.appendChild(crater);
+
+        if (x.castleSeat !== null) {
+          if (x.castleSeat === app.seat) for (const m of $$('.castle-mark.mine', overlay)) m.remove();
+          const ruin = el('div', 'marker ruin-mark fresh', ART.ruin(SEAT_COLORS[x.castleSeat]));
+          placeMarker(ruin, x.position);
+          overlay.appendChild(ruin);
+        }
+        if (lost && sameRC(lost, x.position)) {
+          for (const m of $$('.bonus-mark', overlay)) m.classList.add('shattered');
+        }
+      }, 160);
+    }, i * 170);
+  });
+
+  await wait(n * 170 + 1000);
+
+  const fallen = res.explosions.filter((x) => x.castleSeat !== null).map((x) => x.castleSeat);
+  const lines = [];
+  if (fallen.includes(app.seat)) lines.push('<b>Your castle has fallen.</b>');
+  const others = fallen.filter((s) => s !== app.seat);
+  if (others.length) {
+    const dots = others.map((s) => `<span class="seat-dot" style="--seat:${SEAT_COLORS[s]}"></span>`).join('');
+    lines.push(`${others.length === 1 ? 'A castle falls' : 'Castles fall'}. ${dots} ${others.length === 1 ? 'is' : 'are'} out.`);
+  }
+  if (lost) lines.push('Your treasure was destroyed.');
+  if (!lines.length) lines.push('The smoke clears.');
+
+  if (fallen.length) sound.play('castleFall');
+  renderSeatChips();
+  status.innerHTML = `<span class="verdict">${lines.join(' ')}</span>`;
+  await wait(fallen.length || lost ? 1700 : 700);
 }
 
 /** Slow, deliberate, one cell at a time. */
@@ -5917,19 +6929,32 @@ function showResult() {
   showScreen('screen-result');
 
   const seat = reveal.winner;
-  const winnerSeat = reveal.players[seat];
   const line = $('#winner-line');
-  line.style.setProperty('--seat', SEAT_COLORS[seat]);
-  $('#winner-avatar').innerHTML = winnerSeat.controlMode === CONTROL_MODE.HUMAN ? ART.human : ART.bot;
-  $('#winner-text').textContent =
-    seat === app.seat ? 'Your queen has arrived. You win!' : 'Claims the throne!';
+  if (seat === null || seat === undefined) {
+    // The last castles fell together. Nobody is left to take the throne.
+    line.style.setProperty('--seat', 'var(--muted)');
+    $('#winner-avatar').innerHTML = ART.crater();
+    $('#winner-text').textContent = 'No castle stands. A draw.';
+  } else {
+    const winnerSeat = reveal.players[seat];
+    line.style.setProperty('--seat', SEAT_COLORS[seat]);
+    $('#winner-avatar').innerHTML = winnerSeat.controlMode === CONTROL_MODE.HUMAN ? ART.human : ART.bot;
+    $('#winner-text').textContent =
+      seat === app.seat
+        ? 'Your queen has arrived. You win!'
+        : (reveal.eliminatedSeats || []).includes(app.seat)
+        ? 'Their castle outlasted yours.'
+        : 'Claims the throne!';
+  }
 
   // Stats live in the bottom message strip, not in a panel of their own.
   const claimed = reveal.bonusLedger.filter((b) => b.outcome === 'COLLECTED').length;
+  const craters = (reveal.craters || []).length;
   $('#result-status').innerHTML =
     `<span class="stat"><b>${reveal.roundsPlayed}</b> rounds</span>` +
     `<span class="stat"><b>${reveal.completeQueenPath.length - 1}</b> cells travelled</span>` +
-    `<span class="stat"><b>${claimed}</b> treasure claimed</span>`;
+    `<span class="stat"><b>${claimed}</b> treasure claimed</span>` +
+    (craters ? `<span class="stat"><b>${craters}</b> cannonball${craters === 1 ? '' : 's'} landed</span>` : '');
 
   buildGrid($('#replay-cells'), $('#replay-board'), reveal.board.width, reveal.board.height, null);
   $('#replay-overlay').innerHTML = '';
@@ -5960,12 +6985,24 @@ function drawReplayFrame(n, partialSteps = null) {
   const log = reveal.roundLog;
   const upto = Math.max(0, Math.min(n, log.length));
 
-  // Castles — all four, permanently.
+  // Cannon fire up to this point: craters, and the castles they brought down.
+  const struck = [];
+  for (let i = 0; i < upto; i++) for (const x of log[i].explosions || []) struck.push(x.position);
+  for (const p of struck) {
+    const crater = el('div', 'marker crater-mark', ART.crater());
+    placeMarker(crater, p);
+    overlay.appendChild(crater);
+  }
+
+  // Castles — all of them, permanently; rubble once they have fallen.
   for (const p of reveal.players) {
-    const mark = el('div', 'marker castle-mark', ART.castle(SEAT_COLORS[p.seat]));
+    const fell = struck.some((q) => sameRC(q, p.castlePosition));
+    const mark = fell
+      ? el('div', 'marker ruin-mark', ART.ruin(SEAT_COLORS[p.seat]))
+      : el('div', 'marker castle-mark', ART.castle(SEAT_COLORS[p.seat]));
     mark.style.color = SEAT_COLORS[p.seat];
     placeMarker(mark, p.castlePosition);
-    if (p.seat === reveal.winner && upto === log.length) mark.classList.add('mine', 'win');
+    if (!fell && p.seat === reveal.winner && upto === log.length) mark.classList.add('mine', 'win');
     overlay.appendChild(mark);
   }
 
@@ -6106,13 +7143,38 @@ function renderResultImage() {
   ctx.lineWidth = 4;
   ctx.stroke();
 
+  // craters
+  for (const p of r.craters || []) {
+    ctx.fillStyle = 'rgba(58, 42, 26, .9)';
+    ctx.beginPath();
+    ctx.arc(cx(p.c), cy(p.r), Math.min(cw, ch) * 0.42, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#050608';
+    ctx.beginPath();
+    ctx.arc(cx(p.c), cy(p.r), Math.min(cw, ch) * 0.24, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
   // castles
   for (const p of r.players) {
     ctx.fillStyle = SEAT_COLORS[p.seat];
     const x = cx(p.castlePosition.c);
     const y = cy(p.castlePosition.r);
     const s2 = Math.min(cw, ch) * 0.62;
+    const fell = (r.eliminatedSeats || []).includes(p.seat);
+    ctx.globalAlpha = fell ? 0.45 : 1;
     ctx.fillRect(x - s2 / 2, y - s2 / 2, s2, s2);
+    ctx.globalAlpha = 1;
+    if (fell) {
+      ctx.strokeStyle = '#0b0d12';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(x - s2 / 2, y - s2 / 2);
+      ctx.lineTo(x + s2 / 2, y + s2 / 2);
+      ctx.moveTo(x + s2 / 2, y - s2 / 2);
+      ctx.lineTo(x - s2 / 2, y + s2 / 2);
+      ctx.stroke();
+    }
     if (p.seat === r.winner) {
       ctx.strokeStyle = '#ffeebe';
       ctx.lineWidth = 3.5;
@@ -6148,7 +7210,8 @@ function renderResultImage() {
 async function shareResult() {
   const r = app.reveal;
   const won = r.winner === app.seat;
-  const text = `Queen's Tug ${r.gameId} — ${won ? 'I won' : 'the winner took it'} in ${r.roundsPlayed} rounds.\nPlay the same board: ${inviteUrl(r.gameId)}`;
+  const outcome = r.winner === null ? 'every castle fell' : won ? 'I won' : 'the winner took it';
+  const text = `Queen's Tug ${r.gameId} — ${outcome} in ${r.roundsPlayed} rounds.\nPlay the same board: ${inviteUrl(r.gameId)}`;
 
   let file = null;
   try {
@@ -6303,6 +7366,18 @@ function boot() {
   // ---- board ----
   $('#board-cells').addEventListener('click', onBoardClick);
   wireCoinRemoval($('#board-cells'));
+
+  // ---- cannon fire ----
+  $('#ammo').addEventListener('pointerdown', (e) => beginAimDrag(e, 'rack'));
+  $('#board-overlay').addEventListener('pointerdown', (e) => {
+    if (e.target.closest('.shot-mark.live')) beginAimDrag(e, 'shot');
+  });
+  // Tapping anywhere but the board or the rack puts the cannonball away.
+  document.addEventListener('pointerdown', (e) => {
+    if (app.aiming && !e.target.closest('#ammo, #board')) endAiming();
+  });
+  // The rules say how many cannonballs a player gets; so does config.js.
+  for (const n of $$('.cannon-count')) n.textContent = numberWord(DEFAULT_CONFIG.cannonballsPerPlayer);
   $('#board-overlay').addEventListener('click', (e) => {
     const queen = e.target.closest('.queen.armed');
     if (!queen) return;
@@ -6333,7 +7408,10 @@ function boot() {
 
   // ---- keyboard ----
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') return closeModals();
+    if (e.key === 'Escape') {
+      endAiming();
+      return closeModals();
+    }
     if (!$('#screen-title').hidden && e.key === 'Enter' && !$('#btn-room-start').hidden) {
       if (['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName)) return;
       e.preventDefault();

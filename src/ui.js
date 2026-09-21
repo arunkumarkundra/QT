@@ -12,7 +12,7 @@
  */
 
 import { createHost } from './host.js';
-import { DIRECTIONS, OPPOSITE, VECTORS, SEAT_COLORS, UI_TIMING, CONTROL_MODE, setPacing } from './config.js';
+import { DIRECTIONS, OPPOSITE, VECTORS, SEAT_COLORS, UI_TIMING, CONTROL_MODE, DEFAULT_CONFIG, setPacing } from './config.js';
 import { sound } from './sound.js';
 import { connectRoom, multiplayerSupported } from './net.js';
 
@@ -74,6 +74,73 @@ const ART = {
       <path fill="rgba(255,255,255,.22)" stroke="none" d="M3 13h30l2 2.4H1z"/>
     </g>
   </svg>`,
+
+  /**
+   * A cast-iron cannonball: dark and heavy, with one cold highlight and a
+   * thin gold rim so it belongs to the same treasury as the coins.
+   */
+  cannonball: () => {
+    const g = uid('cb');
+    return `<svg viewBox="0 0 40 40" aria-hidden="true">
+    <defs>
+      <radialGradient id="${g}" cx="34%" cy="30%" r="75%">
+        <stop offset="0" stop-color="#8d97a8"/><stop offset=".28" stop-color="#4a5262"/><stop offset=".75" stop-color="#1c2029"/><stop offset="1" stop-color="#0b0d12"/>
+      </radialGradient>
+    </defs>
+    <circle cx="20" cy="20.6" r="17.6" fill="rgba(0,0,0,.45)"/>
+    <circle cx="20" cy="19.4" r="17" fill="url(#${g})" stroke="#b58a2c" stroke-width="1.2"/>
+    <ellipse cx="13.6" cy="12.6" rx="4.6" ry="3" fill="rgba(255,255,255,.34)" transform="rotate(-32 13.6 12.6)"/>
+    <path d="M9 27.5a14 14 0 0 0 19.5 3.2" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="1.4" stroke-linecap="round"/>
+  </svg>`;
+  },
+
+  /** Where a cannonball landed: scorched stone, a blackened pit, cooling embers. */
+  crater: () => {
+    const g = uid('cr');
+    return `<svg viewBox="0 0 40 40" aria-hidden="true">
+    <defs>
+      <radialGradient id="${g}" cx="50%" cy="50%" r="50%">
+        <stop offset="0" stop-color="#050608"/><stop offset=".4" stop-color="#2b1d12"/><stop offset=".7" stop-color="#7a5430" stop-opacity=".9"/><stop offset="1" stop-color="#7a5430" stop-opacity="0"/>
+      </radialGradient>
+    </defs>
+    <path fill="url(#${g})" d="M20 2l3.2 7.4 7.6-4-2.4 8 8.4.8-6.4 5.6 6.8 5-8.4 1.4 2.6 8-7.6-3.6L20 38l-3.8-7.4-7.6 3.6 2.6-8-8.4-1.4 6.8-5-6.4-5.6 8.4-.8-2.4-8 7.6 4z"/>
+    <ellipse cx="20" cy="20.6" rx="8.4" ry="7.4" fill="none" stroke="rgba(255,140,60,.45)" stroke-width="1.6"/>
+    <ellipse cx="20" cy="20.6" rx="7.4" ry="6.4" fill="#040506" stroke="rgba(170,120,70,.7)" stroke-width="1"/>
+    <g fill="#ff9a3c">
+      <circle cx="13.5" cy="15" r=".9" opacity=".75"/><circle cx="27" cy="17" r=".7" opacity=".6"/>
+      <circle cx="24.5" cy="27" r=".9" opacity=".7"/><circle cx="14" cy="26" r=".6" opacity=".55"/>
+    </g>
+  </svg>`;
+  },
+
+  /** A castle brought down by cannon fire: broken battlements, a split wall. */
+  ruin: (color) => `<svg viewBox="0 0 36 34" aria-hidden="true">
+    <g stroke="rgba(0,0,0,.6)" stroke-width="1.1" stroke-linejoin="round">
+      <path fill="${color}" d="M3 32V17l2-3.5 2.6 1.8L9 11l3.4 3 1.8-5.4 3.6 4.6L19 22l-3 10zM20 32l2.6-8.4 1.4-7 3.5 2.2L29 14l2.4 3.6L35 16.6V32z"/>
+      <path fill="rgba(0,0,0,.45)" stroke="none" d="M12 32l1.6-6h3.2L15.4 32z"/>
+    </g>
+    <path d="M17.8 11.6l1.6 5.2-2 4.4 2.4 3.8-1.4 7" fill="none" stroke="#0b0d12" stroke-width="1.6" stroke-linecap="round"/>
+    <g fill="${color}" stroke="rgba(0,0,0,.55)" stroke-width=".8" opacity=".85">
+      <path d="M7 31.4l2.4-1.2 1.4 1.6z"/><path d="M26 31.6l2-2 2 2z"/><path d="M31.5 31.5l1.2-1.4 1 1.4z"/>
+    </g>
+  </svg>`,
+
+  /** The blast itself: a hot white core inside ragged gold-orange rays. */
+  blast: () => {
+    const g = uid('bl');
+    return `<svg viewBox="0 0 100 100" aria-hidden="true">
+    <defs>
+      <radialGradient id="${g}" cx="50%" cy="50%" r="50%">
+        <stop offset="0" stop-color="#ffffff"/><stop offset=".22" stop-color="#fff3c4"/><stop offset=".5" stop-color="#ffb43c"/><stop offset=".78" stop-color="#e2521f" stop-opacity=".75"/><stop offset="1" stop-color="#e2521f" stop-opacity="0"/>
+      </radialGradient>
+    </defs>
+    <path fill="url(#${g})" d="M50 2l7 26 20-19-8 27 28-4-24 16 25 12-28 2 16 24-24-15-2 29-10-27-12 25 1-28-24 13 16-23-27-4 26-11-22-18 28 6-9-27 21 18z"/>
+    <circle cx="50" cy="50" r="13" fill="#fffdf2"/>
+  </svg>`;
+  },
+
+  /** Over a fallen player's icon. */
+  fallen: `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M5 5l14 14M19 5L5 19"/></svg>`,
 
   /** A struck gold coin, milled edge and all. */
   coin: () => {
@@ -181,6 +248,10 @@ const app = {
    * staking gesture, so it is correct even when the timer locks for you.
    */
   stagedBid: null,
+  /** Tap-to-aim: the cannonball rack was tapped and the next board tap aims it. */
+  aiming: false,
+  /** A cannonball being dragged: { from: 'rack' | 'shot', ghost, x0, y0, moved }. */
+  aimDrag: null,
   /** Bumped whenever a game is mounted or torn down; in-flight animations
    *  belonging to an older generation abandon themselves. */
   epoch: 0,
@@ -456,7 +527,13 @@ function renderTug(res, myBid, { nearMiss = false } = {}) {
   let hubCls = 'tug-hub';
   let hubMove = '';
   let hubTitle;
-  if (spent === 0) {
+  if (res.finale) {
+    hubMove = `<b class="move">${ART.castle(SEAT_COLORS[res.finale.seat])}</b>`;
+    hubTitle = 'Only one castle stood, so she went straight to it';
+  } else if (res.draw) {
+    hubCls += ' still';
+    hubTitle = 'No castle was left standing';
+  } else if (spent === 0) {
     hubCls += ' still';
     hubTitle = 'Nobody spent a coin, so she stayed put';
   } else if (!winner) {
@@ -959,6 +1036,7 @@ function onHostEvent(evt) {
     case 'round-open':
       app.animating = false;
       app.stagedBid = null;
+      app.aiming = false;
       sound.play('roundStart');
       render();
       break;
@@ -1009,6 +1087,11 @@ function render() {
   if (!app.game) return;
   const view = app.game.getView();
   if (!view) return;
+  // The round closed, or the last ball is gone: stop aiming.
+  if (app.aiming && !canAim(view)) {
+    app.aiming = false;
+    paintAimCells(null);
+  }
   renderSeatChips();
   // While the queen is walking, the board belongs to the animation. Redrawing
   // markers here was making the NEXT round's treasure appear before the queen
@@ -1018,6 +1101,7 @@ function render() {
     renderTargets(view);
   }
   renderPurse(view);
+  renderAmmo(view);
   renderStatus(view);
   renderTimer();
 }
@@ -1038,11 +1122,16 @@ function renderSeatChips() {
     // A retired seat is a person who left a humans-only game. Nobody is
     // playing it, so it must not read as either a live player or a bot.
     if (seat.retired) chip.classList.add('retired');
+    // Castle destroyed by cannon fire: still watching, no longer playing.
+    if (seat.eliminated) chip.classList.add('fallen');
     chip.appendChild(el('span', 'avatar', seat.controlMode === CONTROL_MODE.HUMAN ? ART.human : ART.bot));
     chip.appendChild(el('span', 'lock-badge', ART.lockClosed));
+    if (seat.eliminated) chip.appendChild(el('span', 'fallen-mark', ART.fallen));
     // Identity is carried entirely by colour and icon; the title is for
     // screen readers and hover only.
-    chip.title = seat.retired
+    chip.title = seat.eliminated
+      ? `Castle destroyed — out of the game${seat.seat === app.seat ? ' (you)' : ''}`
+      : seat.retired
       ? 'Left the game'
       : `${seat.controlMode === CONTROL_MODE.HUMAN ? 'Player' : 'Computer'}${
           seat.seat === app.seat ? ' (you)' : ''
@@ -1054,13 +1143,18 @@ function renderSeatChips() {
 function renderMarkers(view) {
   const overlay = $('#board-overlay');
   // Rebuild everything EXCEPT the queen, which must persist across renders.
-  for (const node of $$('.castle-mark, .bonus-mark', overlay)) node.remove();
+  for (const node of $$('.castle-mark, .bonus-mark, .crater-mark, .ruin-mark, .shot-mark', overlay)) node.remove();
 
-  const castle = el('div', 'marker castle-mark mine', ART.castle(SEAT_COLORS[view.you.seat]));
-  castle.style.color = SEAT_COLORS[view.you.seat];
-  placeMarker(castle, view.you.castlePosition);
-  castle.title = 'Your castle — nobody else can see it';
-  overlay.appendChild(castle);
+  renderCraters(view, overlay);
+
+  // A fallen castle is drawn as rubble with everyone else's, not as yours.
+  if (!view.you.eliminated) {
+    const castle = el('div', 'marker castle-mark mine', ART.castle(SEAT_COLORS[view.you.seat]));
+    castle.style.color = SEAT_COLORS[view.you.seat];
+    placeMarker(castle, view.you.castlePosition);
+    castle.title = 'Your castle — nobody else can see it';
+    overlay.appendChild(castle);
+  }
 
   if (view.you.activeBonus && view.you.activeBonus.reward > 0) {
     const b = view.you.activeBonus;
@@ -1072,6 +1166,8 @@ function renderMarkers(view) {
     mark.title = 'Your treasure — land exactly here to claim it';
     overlay.appendChild(mark);
   }
+
+  renderShotMark(view, overlay);
 
   const queen = ensureQueen(overlay);
   if (!app.animating) placeMarker(queen, view.queenPosition);
@@ -1147,6 +1243,14 @@ function renderStatus(view) {
   const status = $('#status');
   if (!app.started || app.animating) return;
 
+  if (view.you.eliminated) {
+    status.innerHTML = 'Your castle has fallen. Watch how the battle ends.';
+    return;
+  }
+  if (app.aiming && canAim(view)) {
+    status.innerHTML = 'Tap a cell to aim your cannonball.';
+    return;
+  }
   if (view.you.locked) {
     const waiting = view.opponents.filter((o) => !o.locked).length;
     status.innerHTML = waiting
@@ -1158,10 +1262,14 @@ function renderStatus(view) {
     status.innerHTML = "You're out of coins. Pass. Everyone refills when all four are empty.";
     return;
   }
+  if (view.you.currentBidTotal > 0 || view.you.currentBid.shot) {
+    status.innerHTML = 'Tap the queen to lock your bid.';
+    return;
+  }
   status.innerHTML =
-    view.you.currentBidTotal > 0
-      ? 'Tap the queen to lock your bid.'
-      : 'Tap the direction to stake the coins to lure the queen.';
+    view.you.cannonballs > 0
+      ? 'Stake coins to lure the queen. Drag a cannonball to strike others.'
+      : 'Stake coins to lure the queen.';
 }
 
 function renderTimer() {
@@ -1216,6 +1324,11 @@ function planningAllowed(view) {
 
 function onBoardClick(e) {
   const cell = e.target.closest('.cell');
+  // Tap-to-aim: the next tap on the board chooses the target, never a coin.
+  if (app.aiming) {
+    if (cell) aimAt(Number(cell.dataset.r), Number(cell.dataset.c));
+    return;
+  }
   if (!cell || !cell.dataset.dir) return;
   if (app.suppressClick) {
     app.suppressClick = false;
@@ -1233,6 +1346,7 @@ function onBoardClick(e) {
 function wireCoinRemoval(root) {
   let timer = null;
   const start = (e) => {
+    if (app.aiming) return;
     const cell = e.target.closest?.('.cell');
     if (!cell || !cell.dataset.dir) return;
     timer = setTimeout(() => {
@@ -1340,7 +1454,256 @@ function lockIn() {
   }
   sound.play('lock');
   app.placements = [];
+  endAiming();
   render();
+}
+
+/* ------------------------------------------------------------------ *
+ * Cannon fire — aiming
+ *
+ * A shot is part of the round's plan: it rides inside the bid as `shot`, is
+ * staged and locked with the coins, and the server validates it the same way.
+ * Two ways to aim, both always available:
+ *   · drag a cannonball from the rack onto a cell (mouse or finger), or
+ *   · tap the rack, then tap a cell.
+ * An aimed ball sits on its cell with a gold crosshair. Tap it, or drag it
+ * off the board, to take it back; drag it to another cell to move it.
+ * ------------------------------------------------------------------ */
+
+/** 'three' reads better than '3' in the rules. */
+const numberWord = (n) => ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'][n] ?? String(n);
+
+const sameRC = (a, b) => !!a && !!b && a.r === b.r && a.c === b.c;
+
+function canAim(view) {
+  return !!view && planningAllowed(view) && !view.you.eliminated && view.you.cannonballs > 0;
+}
+
+/** Mirrors the engine's rule, so the board can show what the server will accept. */
+function shotAllowedAt(view, r, c) {
+  const m = view.board.boundaryMargin ?? 1;
+  if (r < m || c < m || r > view.board.height - 1 - m || c > view.board.width - 1 - m) return false;
+  const p = { r, c };
+  if (sameRC(p, view.queenPosition)) return false;
+  if (sameRC(p, view.you.castlePosition)) return false;
+  if (sameRC(p, view.you.activeBonus?.position)) return false;
+  if ((view.craters || []).some((q) => sameRC(q, p))) return false;
+  return true;
+}
+
+function aimAt(r, c) {
+  const view = app.game.getView();
+  if (!canAim(view)) return endAiming();
+  if (!shotAllowedAt(view, r, c)) {
+    sound.play('deny');
+    toast(aimRefusal(view, r, c), 'bad');
+    return;
+  }
+  endAiming();
+  setShot({ r, c });
+}
+
+/** Why that cell cannot be aimed at, in the player's words. */
+function aimRefusal(view, r, c) {
+  const p = { r, c };
+  if (sameRC(p, view.you.castlePosition)) return "That's your own castle.";
+  if (sameRC(p, view.you.activeBonus?.position)) return "That's your own treasure.";
+  if (sameRC(p, view.queenPosition)) return "You can't fire at the queen.";
+  if ((view.craters || []).some((q) => sameRC(q, p))) return 'That cell is already a crater.';
+  return 'Nothing stands on the edge of the board.';
+}
+
+function setShot(target) {
+  const view = app.game.getView();
+  if (!planningAllowed(view)) return;
+  const bid = { ...view.you.currentBid };
+  if (target) bid.shot = { r: target.r, c: target.c };
+  else delete bid.shot;
+  const r = app.game.stageBid(app.seat, bid);
+  if (!r.ok) {
+    sound.play('deny');
+    if (r.error) toast(r.error, 'bad');
+    return;
+  }
+  sound.play(target ? 'cannonLoad' : 'cannonUnload');
+  app.stagedBid = { ...bid };
+  render();
+}
+
+function startAiming() {
+  const view = app.game?.getView();
+  if (!canAim(view)) return;
+  app.aiming = true;
+  paintAimCells(view);
+  render();
+}
+
+function endAiming() {
+  const was = app.aiming;
+  app.aiming = false;
+  paintAimCells(null);
+  if (was) render();
+}
+
+/** Light the cells a shot may land on; dim everything else. */
+function paintAimCells(view) {
+  const board = $('#board');
+  const on = !!view && (app.aiming || !!app.aimDrag);
+  board.classList.toggle('aim-mode', on);
+  for (const cell of $$('#board-cells .cell')) {
+    cell.classList.toggle('aimable', on && shotAllowedAt(view, Number(cell.dataset.r), Number(cell.dataset.c)));
+    cell.classList.remove('aim-hover');
+  }
+}
+
+/** The rack: one iron ball per cannonball, spent ones as empty sockets. */
+function renderAmmo(view) {
+  const rack = $('#ammo');
+  if (!rack) return;
+  const total = view.config.cannonballsPerPlayer ?? 0;
+  if (!total) {
+    rack.hidden = true;
+    return;
+  }
+  rack.hidden = false;
+  const left = view.you.cannonballs ?? 0;
+  const aimed = !!view.you.currentBid?.shot;
+  const armed = canAim(view);
+  rack.classList.toggle('armed', armed);
+  rack.classList.toggle('aiming', app.aiming && armed);
+  rack.classList.toggle('fallen', !!view.you.eliminated);
+
+  const key = `${total}|${left}|${aimed}`;
+  if (rack.dataset.key !== key) {
+    rack.dataset.key = key;
+    rack.innerHTML = '';
+    for (let i = 0; i < total; i++) {
+      // Balls are used from the right, so the rack empties toward its start.
+      const state = i >= left ? 'spent' : aimed && i === left - 1 ? 'aimed' : 'ready';
+      const ball = el('span', `ammo-ball ${state}`, state === 'spent' ? '' : ART.cannonball());
+      rack.appendChild(ball);
+    }
+  }
+  const ready = left - (aimed ? 1 : 0);
+  rack.title = view.you.eliminated
+    ? 'Your castle has fallen'
+    : left === 0
+    ? 'No cannonballs left'
+    : aimed
+    ? 'Aimed for this round — tap the ball on the board to take it back'
+    : armed
+    ? `${ready} cannonball${ready === 1 ? '' : 's'} left. Drag one onto a cell, or tap here then tap a cell. One per round.`
+    : `${ready} cannonball${ready === 1 ? '' : 's'} left`;
+  rack.setAttribute('aria-label', rack.title);
+}
+
+function renderCraters(view, overlay) {
+  for (const p of view.craters || []) {
+    const mark = el('div', 'marker crater-mark', ART.crater());
+    placeMarker(mark, p);
+    mark.title = 'Crater — a cannonball landed here';
+    overlay.appendChild(mark);
+  }
+  for (const r of view.ruins || []) {
+    const mark = el('div', 'marker ruin-mark', ART.ruin(SEAT_COLORS[r.seat]));
+    placeMarker(mark, r.position);
+    mark.title = r.seat === view.you.seat ? 'Your castle, destroyed' : 'A castle destroyed by cannon fire';
+    overlay.appendChild(mark);
+  }
+}
+
+function renderShotMark(view, overlay) {
+  const shot = view.you.currentBid?.shot;
+  if (!shot || view.status !== 'PLAYING') return;
+  const mark = el('div', 'marker shot-mark', `<span class="crosshair"></span>${ART.cannonball()}`);
+  placeMarker(mark, shot);
+  const live = planningAllowed(view);
+  mark.classList.toggle('live', live);
+  mark.title = live ? 'Your cannonball — tap to take it back, or drag it elsewhere' : 'Your cannonball fires when the round resolves';
+  overlay.appendChild(mark);
+}
+
+/* ---- dragging ---- */
+
+function beginAimDrag(e, from) {
+  const view = app.game?.getView();
+  if (!canAim(view)) return;
+  if (from === 'rack' && !e.target.closest('.ammo-ball.ready, .ammo-ball.aimed')) return;
+  e.preventDefault();
+  const ghost = el('div', 'drag-ball', ART.cannonball());
+  ghost.hidden = true;
+  document.body.appendChild(ghost);
+  app.aimDrag = { from, ghost, x0: e.clientX, y0: e.clientY, moved: false, pointerId: e.pointerId };
+  window.addEventListener('pointermove', moveAimDrag);
+  window.addEventListener('pointerup', endAimDrag);
+  window.addEventListener('pointercancel', cancelAimDrag);
+}
+
+function cellUnder(x, y) {
+  const hit = document.elementFromPoint(x, y);
+  const cell = hit?.closest?.('#board-cells .cell');
+  if (cell) return cell;
+  // Markers sit above the cells; fall back to geometry.
+  const board = $('#board-cells').getBoundingClientRect();
+  if (x < board.left || x > board.right || y < board.top || y > board.bottom) return null;
+  const view = app.game.getView();
+  const c = Math.floor(((x - board.left) / board.width) * view.board.width);
+  const r = Math.floor(((y - board.top) / board.height) * view.board.height);
+  return $(`#board-cells .cell[data-r="${r}"][data-c="${c}"]`);
+}
+
+function moveAimDrag(e) {
+  const d = app.aimDrag;
+  if (!d || e.pointerId !== d.pointerId) return;
+  if (!d.moved && Math.hypot(e.clientX - d.x0, e.clientY - d.y0) < 6) return;
+  if (!d.moved) {
+    d.moved = true;
+    d.ghost.hidden = false;
+    app.aiming = false;
+    paintAimCells(app.game.getView());
+    $('.shot-mark', $('#board-overlay'))?.classList.add('lifted');
+  }
+  d.ghost.style.transform = `translate(${e.clientX}px, ${e.clientY}px)`;
+  const cell = cellUnder(e.clientX, e.clientY);
+  for (const c of $$('#board-cells .cell.aim-hover')) if (c !== cell) c.classList.remove('aim-hover');
+  if (cell?.classList.contains('aimable')) cell.classList.add('aim-hover');
+}
+
+function endAimDrag(e) {
+  const d = app.aimDrag;
+  if (!d || e.pointerId !== d.pointerId) return;
+  teardownAimDrag();
+  if (!d.moved) {
+    // A tap, not a drag.
+    if (d.from === 'shot') setShot(null);
+    else if (app.aiming) endAiming();
+    else startAiming();
+    return;
+  }
+  const cell = cellUnder(e.clientX, e.clientY);
+  if (cell) {
+    aimAt(Number(cell.dataset.r), Number(cell.dataset.c));
+    render();
+  } else if (d.from === 'shot') {
+    setShot(null); // dragged off the board: taken back
+  } else {
+    render();
+  }
+}
+
+function cancelAimDrag() {
+  teardownAimDrag();
+  render();
+}
+
+function teardownAimDrag() {
+  const d = app.aimDrag;
+  if (d?.ghost) d.ghost.remove();
+  app.aimDrag = null;
+  window.removeEventListener('pointermove', moveAimDrag);
+  window.removeEventListener('pointerup', endAimDrag);
+  window.removeEventListener('pointercancel', cancelAimDrag);
+  paintAimCells(app.aiming ? app.game?.getView() : null);
 }
 
 /* ------------------------------------------------------------------ *
@@ -1373,9 +1736,26 @@ async function playResolution() {
   // Clear the staked coins from the board now that they are spent.
   renderTargets({ ...view, you: { ...view.you, currentBid: { UP: 0, DOWN: 0, LEFT: 0, RIGHT: 0 } } });
   renderPurse(view);
+  endAiming();
+
+  // Cannon fire lands first, in front of everyone, before the queen stirs.
+  if (res.explosions?.length) {
+    await playCannonFire(res, view);
+    if (!alive()) return;
+  }
   renderSeatChips();
 
-  if (res.tie) {
+  if (res.draw) {
+    sound.play('noMove');
+    status.innerHTML = `<span class="verdict">No castle is left standing.</span>`;
+    await wait(UI_TIMING.cancelAnimMs + 500);
+  } else if (res.finale) {
+    sound.play('moveStart');
+    status.innerHTML = `<span class="verdict">Only one castle stands. The queen goes to it.</span>`;
+    await wait(UI_TIMING.cancelAnimMs + 400);
+    await walkQueen(res);
+    sound.play('moveEnd');
+  } else if (res.tie) {
     // Deliberately unresolved: a stalemate must never sound like progress.
     sound.play('noMove');
     status.innerHTML = `<span class="verdict">The forces cancel. The queen holds her ground.</span>`;
@@ -1399,6 +1779,7 @@ async function playResolution() {
    */
   const castle = view.you.castlePosition;
   const passedOver =
+    !view.you.eliminated &&
     res.winner === null &&
     res.path.length > 1 &&
     res.path.slice(0, -1).some((p) => p.r === castle.r && p.c === castle.c);
@@ -1428,7 +1809,7 @@ async function playResolution() {
   const after = app.game.getView();
   if (after && after.status === 'FINISHED') {
     app.animating = false;
-    sound.play('victory');
+    if (!res.draw) sound.play('victory');
     await wait(700);
     showResult();
     return;
@@ -1436,6 +1817,77 @@ async function playResolution() {
   app.animating = false;
   status.innerHTML = '';
   render();
+}
+
+/**
+ * The cannonballs land. Every explosion is public, so every player sees the
+ * same thing: the blast, the crater it leaves, and any castle it brings down.
+ * What they do NOT see is who fired, or whether a crater swallowed somebody's
+ * treasure — only that treasure's owner watches it vanish.
+ */
+async function playCannonFire(res, view) {
+  const overlay = $('#board-overlay');
+  const plate = $('#screen-game .board-plate');
+  const status = $('#status');
+  const n = res.explosions.length;
+  const lost = view.lastResolution?.yourTreasureDestroyed?.position || null;
+
+  // Your own aimed ball is in the air now.
+  for (const m of $$('.shot-mark', overlay)) m.remove();
+  status.innerHTML = `<span class="verdict">${
+    n === 1 ? 'A cannonball flies…' : `${numberWord(n).replace(/^./, (c) => c.toUpperCase())} cannonballs fly…`
+  }</span>`;
+  await wait(Math.max(200, UI_TIMING.cancelAnimMs * 0.45));
+
+  res.explosions.forEach((x, i) => {
+    setTimeout(() => {
+      sound.play('boom');
+      plate?.classList.remove('shake');
+      void plate?.offsetWidth;
+      plate?.classList.add('shake');
+
+      const blast = el('div', 'marker blast-mark', `<span class="shock"></span>${ART.blast()}`);
+      placeMarker(blast, x.position);
+      overlay.appendChild(blast);
+      setTimeout(() => blast.remove(), 1200);
+
+      // The crater is there the moment the smoke clears, and stays.
+      setTimeout(() => {
+        const crater = el('div', 'marker crater-mark fresh', ART.crater());
+        placeMarker(crater, x.position);
+        crater.title = 'Crater — a cannonball landed here';
+        overlay.appendChild(crater);
+
+        if (x.castleSeat !== null) {
+          if (x.castleSeat === app.seat) for (const m of $$('.castle-mark.mine', overlay)) m.remove();
+          const ruin = el('div', 'marker ruin-mark fresh', ART.ruin(SEAT_COLORS[x.castleSeat]));
+          placeMarker(ruin, x.position);
+          overlay.appendChild(ruin);
+        }
+        if (lost && sameRC(lost, x.position)) {
+          for (const m of $$('.bonus-mark', overlay)) m.classList.add('shattered');
+        }
+      }, 160);
+    }, i * 170);
+  });
+
+  await wait(n * 170 + 1000);
+
+  const fallen = res.explosions.filter((x) => x.castleSeat !== null).map((x) => x.castleSeat);
+  const lines = [];
+  if (fallen.includes(app.seat)) lines.push('<b>Your castle has fallen.</b>');
+  const others = fallen.filter((s) => s !== app.seat);
+  if (others.length) {
+    const dots = others.map((s) => `<span class="seat-dot" style="--seat:${SEAT_COLORS[s]}"></span>`).join('');
+    lines.push(`${others.length === 1 ? 'A castle falls' : 'Castles fall'}. ${dots} ${others.length === 1 ? 'is' : 'are'} out.`);
+  }
+  if (lost) lines.push('Your treasure was destroyed.');
+  if (!lines.length) lines.push('The smoke clears.');
+
+  if (fallen.length) sound.play('castleFall');
+  renderSeatChips();
+  status.innerHTML = `<span class="verdict">${lines.join(' ')}</span>`;
+  await wait(fallen.length || lost ? 1700 : 700);
 }
 
 /** Slow, deliberate, one cell at a time. */
@@ -1518,19 +1970,32 @@ function showResult() {
   showScreen('screen-result');
 
   const seat = reveal.winner;
-  const winnerSeat = reveal.players[seat];
   const line = $('#winner-line');
-  line.style.setProperty('--seat', SEAT_COLORS[seat]);
-  $('#winner-avatar').innerHTML = winnerSeat.controlMode === CONTROL_MODE.HUMAN ? ART.human : ART.bot;
-  $('#winner-text').textContent =
-    seat === app.seat ? 'Your queen has arrived. You win!' : 'Claims the throne!';
+  if (seat === null || seat === undefined) {
+    // The last castles fell together. Nobody is left to take the throne.
+    line.style.setProperty('--seat', 'var(--muted)');
+    $('#winner-avatar').innerHTML = ART.crater();
+    $('#winner-text').textContent = 'No castle stands. A draw.';
+  } else {
+    const winnerSeat = reveal.players[seat];
+    line.style.setProperty('--seat', SEAT_COLORS[seat]);
+    $('#winner-avatar').innerHTML = winnerSeat.controlMode === CONTROL_MODE.HUMAN ? ART.human : ART.bot;
+    $('#winner-text').textContent =
+      seat === app.seat
+        ? 'Your queen has arrived. You win!'
+        : (reveal.eliminatedSeats || []).includes(app.seat)
+        ? 'Their castle outlasted yours.'
+        : 'Claims the throne!';
+  }
 
   // Stats live in the bottom message strip, not in a panel of their own.
   const claimed = reveal.bonusLedger.filter((b) => b.outcome === 'COLLECTED').length;
+  const craters = (reveal.craters || []).length;
   $('#result-status').innerHTML =
     `<span class="stat"><b>${reveal.roundsPlayed}</b> rounds</span>` +
     `<span class="stat"><b>${reveal.completeQueenPath.length - 1}</b> cells travelled</span>` +
-    `<span class="stat"><b>${claimed}</b> treasure claimed</span>`;
+    `<span class="stat"><b>${claimed}</b> treasure claimed</span>` +
+    (craters ? `<span class="stat"><b>${craters}</b> cannonball${craters === 1 ? '' : 's'} landed</span>` : '');
 
   buildGrid($('#replay-cells'), $('#replay-board'), reveal.board.width, reveal.board.height, null);
   $('#replay-overlay').innerHTML = '';
@@ -1561,12 +2026,24 @@ function drawReplayFrame(n, partialSteps = null) {
   const log = reveal.roundLog;
   const upto = Math.max(0, Math.min(n, log.length));
 
-  // Castles — all four, permanently.
+  // Cannon fire up to this point: craters, and the castles they brought down.
+  const struck = [];
+  for (let i = 0; i < upto; i++) for (const x of log[i].explosions || []) struck.push(x.position);
+  for (const p of struck) {
+    const crater = el('div', 'marker crater-mark', ART.crater());
+    placeMarker(crater, p);
+    overlay.appendChild(crater);
+  }
+
+  // Castles — all of them, permanently; rubble once they have fallen.
   for (const p of reveal.players) {
-    const mark = el('div', 'marker castle-mark', ART.castle(SEAT_COLORS[p.seat]));
+    const fell = struck.some((q) => sameRC(q, p.castlePosition));
+    const mark = fell
+      ? el('div', 'marker ruin-mark', ART.ruin(SEAT_COLORS[p.seat]))
+      : el('div', 'marker castle-mark', ART.castle(SEAT_COLORS[p.seat]));
     mark.style.color = SEAT_COLORS[p.seat];
     placeMarker(mark, p.castlePosition);
-    if (p.seat === reveal.winner && upto === log.length) mark.classList.add('mine', 'win');
+    if (!fell && p.seat === reveal.winner && upto === log.length) mark.classList.add('mine', 'win');
     overlay.appendChild(mark);
   }
 
@@ -1707,13 +2184,38 @@ function renderResultImage() {
   ctx.lineWidth = 4;
   ctx.stroke();
 
+  // craters
+  for (const p of r.craters || []) {
+    ctx.fillStyle = 'rgba(58, 42, 26, .9)';
+    ctx.beginPath();
+    ctx.arc(cx(p.c), cy(p.r), Math.min(cw, ch) * 0.42, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#050608';
+    ctx.beginPath();
+    ctx.arc(cx(p.c), cy(p.r), Math.min(cw, ch) * 0.24, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
   // castles
   for (const p of r.players) {
     ctx.fillStyle = SEAT_COLORS[p.seat];
     const x = cx(p.castlePosition.c);
     const y = cy(p.castlePosition.r);
     const s2 = Math.min(cw, ch) * 0.62;
+    const fell = (r.eliminatedSeats || []).includes(p.seat);
+    ctx.globalAlpha = fell ? 0.45 : 1;
     ctx.fillRect(x - s2 / 2, y - s2 / 2, s2, s2);
+    ctx.globalAlpha = 1;
+    if (fell) {
+      ctx.strokeStyle = '#0b0d12';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(x - s2 / 2, y - s2 / 2);
+      ctx.lineTo(x + s2 / 2, y + s2 / 2);
+      ctx.moveTo(x + s2 / 2, y - s2 / 2);
+      ctx.lineTo(x - s2 / 2, y + s2 / 2);
+      ctx.stroke();
+    }
     if (p.seat === r.winner) {
       ctx.strokeStyle = '#ffeebe';
       ctx.lineWidth = 3.5;
@@ -1749,7 +2251,8 @@ function renderResultImage() {
 async function shareResult() {
   const r = app.reveal;
   const won = r.winner === app.seat;
-  const text = `Queen's Tug ${r.gameId} — ${won ? 'I won' : 'the winner took it'} in ${r.roundsPlayed} rounds.\nPlay the same board: ${inviteUrl(r.gameId)}`;
+  const outcome = r.winner === null ? 'every castle fell' : won ? 'I won' : 'the winner took it';
+  const text = `Queen's Tug ${r.gameId} — ${outcome} in ${r.roundsPlayed} rounds.\nPlay the same board: ${inviteUrl(r.gameId)}`;
 
   let file = null;
   try {
@@ -1904,6 +2407,18 @@ function boot() {
   // ---- board ----
   $('#board-cells').addEventListener('click', onBoardClick);
   wireCoinRemoval($('#board-cells'));
+
+  // ---- cannon fire ----
+  $('#ammo').addEventListener('pointerdown', (e) => beginAimDrag(e, 'rack'));
+  $('#board-overlay').addEventListener('pointerdown', (e) => {
+    if (e.target.closest('.shot-mark.live')) beginAimDrag(e, 'shot');
+  });
+  // Tapping anywhere but the board or the rack puts the cannonball away.
+  document.addEventListener('pointerdown', (e) => {
+    if (app.aiming && !e.target.closest('#ammo, #board')) endAiming();
+  });
+  // The rules say how many cannonballs a player gets; so does config.js.
+  for (const n of $$('.cannon-count')) n.textContent = numberWord(DEFAULT_CONFIG.cannonballsPerPlayer);
   $('#board-overlay').addEventListener('click', (e) => {
     const queen = e.target.closest('.queen.armed');
     if (!queen) return;
@@ -1934,7 +2449,10 @@ function boot() {
 
   // ---- keyboard ----
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') return closeModals();
+    if (e.key === 'Escape') {
+      endAiming();
+      return closeModals();
+    }
     if (!$('#screen-title').hidden && e.key === 'Enter' && !$('#btn-room-start').hidden) {
       if (['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName)) return;
       e.preventDefault();

@@ -370,6 +370,40 @@ const RECIPES = {
     bell({ freq: 220, dur: 0.5, gain: 0.2, start: 0.03 });
   },
 
+  /** A cannonball rolled into place: iron on stone. */
+  cannonLoad() {
+    noise({ dur: 0.09, gain: 0.4, freq: 700, type: 'lowpass' });
+    voice({ type: 'triangle', from: 170, to: 120, dur: 0.14, gain: 0.3 });
+    chink({ freq: 1300, start: 0.02, gain: 0.12 });
+  },
+
+  /** A cannonball taken back. */
+  cannonUnload() {
+    voice({ type: 'triangle', from: 130, to: 190, dur: 0.12, gain: 0.22 });
+    noise({ dur: 0.06, gain: 0.18, freq: 900, type: 'lowpass' });
+  },
+
+  /**
+   * A cannonball lands. A low thump for the body (felt more than heard on a
+   * laptop), a wide crackle for the blast, and falling debris behind it.
+   */
+  boom() {
+    voice({ type: 'sine', from: 120, to: 38, dur: 0.7, gain: 0.55 });
+    voice({ type: 'triangle', from: 240, to: 60, dur: 0.35, gain: 0.3 });
+    noise({ dur: 0.9, gain: 0.7, freq: 1100, type: 'lowpass' });
+    noise({ dur: 0.35, gain: 0.35, freq: 3200, type: 'bandpass', q: 0.7 });
+    for (let i = 0; i < 5; i++) {
+      noise({ start: 0.22 + i * 0.09 + Math.random() * 0.05, dur: 0.06, gain: 0.12, freq: 1800 + Math.random() * 1400, type: 'bandpass', q: 3 });
+    }
+  },
+
+  /** A castle falls. A tolling low bell after the blast. */
+  castleFall() {
+    bell({ freq: 146.8, dur: 2.2, gain: 0.34, start: 0.25 });
+    bell({ freq: 138.6, dur: 2.0, gain: 0.26, start: 0.27 });
+    bell({ freq: 110.0, dur: 2.6, gain: 0.3, start: 0.95 });
+  },
+
   /** Treasure claimed. A bright cascade over a held root. */
   bonus() {
     [523.3, 659.3, 784.0, 1046.5].forEach((f, i) => chink({ freq: f * 2, start: i * 0.07, gain: 0.26 }));

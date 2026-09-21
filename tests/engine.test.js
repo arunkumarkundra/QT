@@ -940,6 +940,8 @@ test('A full AI game reaches a legal conclusion without leaking or crashing', ()
     for (let round = 0; round < 400 && s.status === 'PLAYING'; round++) {
       const bids = [0, 1, 2, 3].map((seat) => decideBid(createPlayerView(s, seat), { rngSeed: `sim-${i}` }));
       bids.forEach((bid, seat) => {
+        // A seat whose castle fell to cannon fire is pre-locked and bids nothing.
+        if (s.lockedSeats.includes(seat)) return;
         const r = lockBid(s, seat, bid);
         assert(r.ok, `Illegal AI bid: ${r.error}`);
         s = r.state;
@@ -951,7 +953,11 @@ test('A full AI game reaches a legal conclusion without leaking or crashing', ()
       finished++;
       const reveal = createRevealView(s);
       eq(reveal.castles.length, 4);
-      assert(sameCell(reveal.completeQueenPath.at(-1), reveal.castles[s.winner]), 'Path must end on the winning castle');
+      if (s.winner !== null) {
+        assert(sameCell(reveal.completeQueenPath.at(-1), reveal.castles[s.winner]), 'Path must end on the winning castle');
+      } else {
+        assert(s.draw, 'A finished game without a winner must be a draw');
+      }
     }
   }
   assert(finished >= 15, `Only ${finished}/20 AI games reached a castle within 400 rounds`);

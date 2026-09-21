@@ -36,13 +36,22 @@ function publicResolution(resolution, seat) {
     finalPosition: resolution.finalPosition,
     path: resolution.path, // this round's segment only — never the full history
     winner: resolution.winner,
+    draw: !!resolution.draw,
+    /** Where cannonballs landed and whose castles fell. Never who fired. */
+    explosions: (resolution.explosions || []).map((e) => ({ position: cell(e.position.r, e.position.c), castleSeat: e.castleSeat })),
+    eliminated: (resolution.eliminated || []).slice(),
+    finale: resolution.finale ? { ...resolution.finale } : null,
     /** Filled only for the seat it belongs to. */
     yourBonusCollected: null,
+    /** Your own treasure was destroyed this round. Nobody else learns this. */
+    yourTreasureDestroyed: null,
   };
   const collection = resolution._private?.collection;
   if (collection && collection.seat === seat) {
     out.yourBonusCollected = { reward: collection.reward, position: collection.position };
   }
+  const hit = (resolution._private?.treasureHits || []).find((h) => h.seat === seat);
+  if (hit) out.yourTreasureDestroyed = { position: cell(hit.position.r, hit.position.c) };
   return out;
 }
 
@@ -55,7 +64,10 @@ export function createPlayerView(state, seat) {
   if (!player) throw new Error(`No such seat: ${seat}`);
 
   const alloc = state.coinAllocationState[seat];
-  const bonus = state.activeBonuses[seat];
+  const rawBonus = state.activeBonuses[seat];
+  /** A treasure destroyed by cannon fire is a ghost: its owner sees it gone. */
+  const bonus = rawBonus && !rawBonus.destroyed ? rawBonus : null;
+  const eliminated = (state.eliminatedSeats || []).includes(seat);
   const bid = state.currentRoundBids[seat] || emptyBid();
 
   const view = {
@@ -74,7 +86,13 @@ export function createPlayerView(state, seat) {
       replenishCoins: state.config.replenishCoins,
         bonusStartReward: state.config.bonusStartReward,
       playerCount: state.config.playerCount,
+      cannonballsPerPlayer: state.config.cannonballsPerPlayer,
     },
+
+    /** Every cell a cannonball has struck. Public and permanent. */
+    craters: (state.craters || []).map((p) => cell(p.r, p.c)),
+    /** Castles destroyed by cannon fire. Public: everyone saw them fall. */
+    ruins: (state.eliminatedSeats || []).map((s) => ({ seat: s, position: cell(state.castles[s].r, state.castles[s].c) })),
 
     /* ---- Everything this player privately owns (§5.2) ---- */
     you: {
@@ -90,6 +108,15 @@ export function createPlayerView(state, seat) {
       currentBid: { ...bid },
       currentBidTotal: bidTotal(bid),
       locked: state.lockedSeats.includes(seat),
+      /**
+       * Your own cannonballs. Never shown for anyone else: shots are
+       * anonymous, and a rival's falling count would name the shooter.
+       */
+      cannonballs: (state.cannonballs || [])[seat] ?? 0,
+      /** Your castle has fallen. You watch the rest of the game. */
+      eliminated,
+      /** Your treasure was destroyed and has not yet been replaced. */
+      treasureLost: !!(rawBonus && rawBonus.destroyed),
     },
 
     /**
@@ -109,6 +136,8 @@ export function createPlayerView(state, seat) {
         locked: state.lockedSeats.includes(p.seat),
         /** Left a humans-only game; nobody is covering the seat. */
         retired: (state.retiredSeats || []).includes(p.seat),
+        /** Their castle was destroyed by cannon fire. */
+        eliminated: (state.eliminatedSeats || []).includes(p.seat),
       })),
 
     lastResolution: publicResolution(state.lastResolution, seat),
@@ -131,7 +160,10 @@ export function createRevealView(state) {
     seed: state.seed,
     board: { width: state.boardWidth, height: state.boardHeight },
     winner: state.winner,
+    draw: !!state.draw,
     winnerName: state.winner !== null ? state.players[state.winner].displayName : null,
+    craters: (state.craters || []).map((p) => cell(p.r, p.c)),
+    eliminatedSeats: (state.eliminatedSeats || []).slice(),
     roundsPlayed: state.metrics.rounds,
     players: state.players.map((p) => ({
       seat: p.seat,
@@ -180,6 +212,13 @@ export function auditViewForLeaks(state, seat) {
   if ('activeBonuses' in view) problems.push('Bonus array exposed');
   if ('currentRoundBids' in view) problems.push('Raw round bids exposed');
   if ('coinAllocationState' in view) problems.push('Coin allocation array exposed');
+  for (const o of view.opponents) {
+    if ('cannonballs' in o) problems.push(`Opponent ${o.seat} exposes cannonballs — that would name the shooter`);
+  }
+  if ('cannonballs' in view) problems.push('Cannonball array exposed');
+  if (view.lastResolution && JSON.stringify(view.lastResolution).includes('shooter')) {
+    problems.push('A shot was attributed to its shooter');
+  }
   if ('seed' in view) problems.push('RNG seed exposed — future placements predictable');
   if ('rngState' in view) problems.push('RNG cursor exposed');
   if ('bonusLedger' in view) problems.push('Bonus ledger exposed');

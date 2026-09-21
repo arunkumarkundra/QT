@@ -81,6 +81,9 @@ function occupiedHiddenCells(state, { includeQueen = true, exceptSeat = -1 } = {
     if (b && i !== exceptSeat) taken.add(cellKey(b.position));
   });
   if (includeQueen && state.queenPosition) taken.add(cellKey(state.queenPosition));
+  // A cannonball crater is scorched for the rest of the game: nothing new
+  // may ever be placed there.
+  (state.craters || []).forEach((p) => taken.add(cellKey(p)));
   return taken;
 }
 
@@ -178,6 +181,16 @@ export function createGame({ seed, config = {}, players = [] } = {}) {
      */
     retiredSeats: [],
 
+    /* ---- Cannon fire ---- */
+    /** Cannonballs each seat still holds. Private: counting them would reveal who fired. */
+    cannonballs: [],
+    /** Every cell a cannonball has struck. Public, and permanent. */
+    craters: [],
+    /** Seats whose castle was destroyed. Public. They bid nothing and can never win. */
+    eliminatedSeats: [],
+    /** True when the last standing castles fell together and nobody won. */
+    draw: false,
+
     completeQueenPath: [], // authoritative only — never in a PlayerView (§5.3)
     bonusLedger: [], // authoritative only — for the end reveal (§18)
     /**
@@ -199,6 +212,9 @@ export function createGame({ seed, config = {}, players = [] } = {}) {
       cellsTravelled: 0,
       wallBlocks: 0,
       coinsSpent: 0,
+      shotsFired: 0,
+      castlesDestroyed: 0,
+      treasuresDestroyed: 0,
     },
   };
 
@@ -222,6 +238,7 @@ export function createGame({ seed, config = {}, players = [] } = {}) {
       spentThisAllocation: 0,
     });
     state.currentRoundBids.push(null);
+    state.cannonballs.push(cfg.cannonballsPerPlayer);
     state.previousBonusCell.push(null);
     state.activeBonuses.push(null);
   }
@@ -263,7 +280,7 @@ export function startGame(state, { now = Date.now() } = {}) {
  * round opens.
  */
 export function applyRetirements(state) {
-  const retired = state.retiredSeats || [];
+  const retired = [...(state.retiredSeats || []), ...(state.eliminatedSeats || [])];
   if (!retired.length) return state;
   const s = {
     ...state,
@@ -280,6 +297,38 @@ export function applyRetirements(state) {
 /* ------------------------------------------------------------------ *
  * Bidding (§8, §12, §21, §25 step 7)
  * ------------------------------------------------------------------ */
+
+/** Seats still in the game: not eliminated by cannon fire and not retired. */
+export const standingSeats = (state) =>
+  state.players
+    .map((p) => p.seat)
+    .filter((seat) => !(state.eliminatedSeats || []).includes(seat) && !(state.retiredSeats || []).includes(seat));
+
+/**
+ * Validate a cannon shot. A seat may fire at most once per round (one `shot`
+ * per bid), only while it holds a cannonball, and only at a cell where a
+ * castle or treasure could possibly be: inside the placement margin, not a
+ * crater, not the queen's square, and never at its own castle or treasure.
+ */
+export function validateShot(state, seat, shot) {
+  if (!shot || typeof shot !== 'object' || !Number.isInteger(shot.r) || !Number.isInteger(shot.c)) {
+    return { ok: false, error: 'Malformed cannon shot.' };
+  }
+  const p = cell(shot.r, shot.c);
+  if ((state.eliminatedSeats || []).includes(seat)) {
+    return { ok: false, error: 'Your castle has fallen. You can no longer fire.' };
+  }
+  if (!((state.cannonballs || [])[seat] > 0)) return { ok: false, error: 'You have no cannonballs left.' };
+  if (!inBounds(state, p) || !isValidHiddenCell(state, p)) {
+    return { ok: false, error: 'Nothing can stand on the edge of the board. Aim further in.' };
+  }
+  if ((state.craters || []).some((c) => sameCell(c, p))) return { ok: false, error: 'That cell is already a crater.' };
+  if (sameCell(state.queenPosition, p)) return { ok: false, error: 'You cannot fire at the queen.' };
+  if (sameCell(state.castles[seat], p)) return { ok: false, error: 'That is your own castle.' };
+  const own = state.activeBonuses[seat];
+  if (own && !own.destroyed && sameCell(own.position, p)) return { ok: false, error: 'That is your own treasure.' };
+  return { ok: true, shot: p };
+}
 
 /**
  * §8, §21, §24 — Validate a client-submitted bid. The client submits INTENT
@@ -311,7 +360,15 @@ export function validateBid(state, seat, bid) {
     normalised[d] = v;
   }
   for (const k of Object.keys(bid)) {
+    if (k === 'shot') continue;
     if (!DIRECTIONS.includes(k)) return { ok: false, error: 'Bids may only target the four adjacent cells.' };
+  }
+
+  // The round's cannon shot, if any, travels with the bid: one plan, one lock.
+  if (bid.shot != null) {
+    const aim = validateShot(state, seat, bid.shot);
+    if (!aim.ok) return aim;
+    normalised.shot = aim.shot;
   }
 
   const total = bidTotal(normalised);
@@ -434,6 +491,8 @@ export function checkWinner(state, finalPosition) {
   for (let seat = 0; seat < state.castles.length; seat++) {
     // A player who has left cannot be handed the crown in their absence.
     if (retired.includes(seat)) continue;
+    // A destroyed castle is rubble: the queen stopping there wins nothing.
+    if ((state.eliminatedSeats || []).includes(seat)) continue;
     if (sameCell(state.castles[seat], finalPosition)) return seat;
   }
   return null;
@@ -457,8 +516,7 @@ export function retireSeat(state, seat) {
 }
 
 /** Seats still able to act this round. */
-export const activeSeats = (state) =>
-  state.players.filter((p) => !(state.retiredSeats || []).includes(p.seat)).map((p) => p.seat);
+export const activeSeats = (state) => standingSeats(state);
 
 /** §10.2 — reduce every remaining active bonus by the actual distance moved. */
 export function decayBonuses(state, actualDistanceMoved) {
@@ -479,10 +537,18 @@ export function replaceExpiredBonuses(state, collectedSeats = []) {
   let s = clone(state);
   const replaced = [];
   for (let seat = 0; seat < s.activeBonuses.length; seat++) {
+    // A fallen player gets no more treasure.
+    if ((s.eliminatedSeats || []).includes(seat)) continue;
     const bonus = s.activeBonuses[seat];
     const wasCollected = collectedSeats.includes(seat);
     if (!wasCollected && bonus && bonus.reward > s.config.bonusMinReward) continue;
 
+    /**
+     * A treasure destroyed by cannon fire stays in play as a ghost — unseen,
+     * uncollectable, but still decaying with the others — and is replaced
+     * only when it would have run out anyway. Losing a treasure must never
+     * be a shortcut to a fresh, full one.
+     */
     const entry = s.bonusLedger.filter((e) => e.seat === seat && e.outcome === 'ACTIVE').pop();
     if (entry) entry.outcome = wasCollected ? 'COLLECTED' : 'DECAYED';
 
@@ -497,14 +563,18 @@ export function replaceExpiredBonuses(state, collectedSeats = []) {
       round: s.roundNumber + 1,
       outcome: 'ACTIVE',
     });
-    replaced.push({ seat, reason: wasCollected ? 'COLLECTED' : 'DECAYED', bonus: fresh });
+    replaced.push({ seat, reason: wasCollected ? 'COLLECTED' : bonus?.destroyed ? 'RESTORED' : 'DECAYED', bonus: fresh });
   }
   return { state: s, replaced };
 }
 
 /** §11 — replenishment is a four-player condition, never a single-player one. */
 export function shouldReplenishCoins(state) {
-  return state.coinAllocationState.every((a) => a.coinsRemaining <= 0);
+  // Only seats still in the game count. A fallen player's unspent coins must
+  // not hold everyone else's replenishment hostage.
+  const seats = standingSeats(state);
+  if (!seats.length) return false;
+  return seats.every((seat) => state.coinAllocationState[seat].coinsRemaining <= 0);
 }
 
 /**
@@ -533,6 +603,94 @@ export function replenishCoins(state) {
  * Round resolution — the exact ordering mandated by §22
  * ------------------------------------------------------------------ */
 
+/**
+ * Resolve every cannon shot in the round's bids. Shots are simultaneous: two
+ * balls on one cell make one crater. A castle on a struck cell falls and its
+ * owner is out; a treasure on a struck cell becomes a ghost (see
+ * replaceExpiredBonuses). Returns public explosions, the seats knocked out,
+ * and the private list of treasure hits, which only each owner may learn of.
+ */
+export function fireCannons(state, bids) {
+  const s = state;
+  s.craters = s.craters || [];
+  s.eliminatedSeats = s.eliminatedSeats || [];
+  s.cannonballs = s.cannonballs || s.players.map(() => 0);
+
+  const targets = new Map();
+  bids.forEach((bid, seat) => {
+    if (!bid?.shot) return;
+    // Re-checked here: a plan is only as good as the board it lands on.
+    const aim = validateShot(s, seat, bid.shot);
+    if (!aim.ok) return;
+    s.cannonballs[seat] -= 1;
+    s.metrics.shotsFired = (s.metrics.shotsFired || 0) + 1;
+    targets.set(cellKey(aim.shot), aim.shot);
+  });
+
+  const explosions = [];
+  const eliminated = [];
+  const treasureHits = [];
+  const events = [];
+
+  for (const p of targets.values()) {
+    s.craters.push(cell(p.r, p.c));
+
+    let castleSeat = null;
+    s.castles.forEach((c, seat) => {
+      if (castleSeat === null && sameCell(c, p) && !s.eliminatedSeats.includes(seat)) castleSeat = seat;
+    });
+    if (castleSeat !== null) {
+      s.eliminatedSeats.push(castleSeat);
+      eliminated.push(castleSeat);
+      s.metrics.castlesDestroyed = (s.metrics.castlesDestroyed || 0) + 1;
+      events.push({ type: 'CASTLE_DESTROYED', seat: castleSeat, position: cell(p.r, p.c) });
+    }
+
+    s.activeBonuses.forEach((b, seat) => {
+      if (!b || b.destroyed || !sameCell(b.position, p)) return;
+      b.destroyed = true;
+      treasureHits.push({ seat, position: cell(p.r, p.c) });
+      s.metrics.treasuresDestroyed = (s.metrics.treasuresDestroyed || 0) + 1;
+      const entry = s.bonusLedger.filter((e) => e.seat === seat && e.outcome === 'ACTIVE').pop();
+      if (entry) entry.outcome = 'DESTROYED';
+    });
+
+    explosions.push({ position: cell(p.r, p.c), castleSeat });
+  }
+
+  // A fallen player's treasure goes with their castle.
+  for (const seat of eliminated) {
+    const b = s.activeBonuses[seat];
+    if (b && !b.destroyed) {
+      const entry = s.bonusLedger.filter((e) => e.seat === seat && e.outcome === 'ACTIVE').pop();
+      if (entry) entry.outcome = 'LOST';
+    }
+    s.activeBonuses[seat] = null;
+  }
+
+  if (explosions.length) events.unshift({ type: 'CANNON_FIRE', count: explosions.length });
+  return { state: s, explosions, eliminated, treasureHits, events };
+}
+
+/**
+ * The finale's walk: straight to the last castle, rows first, then columns,
+ * one cell at a time so the board can animate it like any other move.
+ */
+export function walkToCastle(state, target) {
+  let pos = cell(state.queenPosition.r, state.queenPosition.c);
+  const path = [];
+  if (!target) return { finalPosition: pos, actualDistance: 0, path, blockedByBoundary: false };
+  while (pos.r !== target.r) {
+    pos = cell(pos.r + Math.sign(target.r - pos.r), pos.c);
+    path.push(pos);
+  }
+  while (pos.c !== target.c) {
+    pos = cell(pos.r, pos.c + Math.sign(target.c - pos.c));
+    path.push(pos);
+  }
+  return { finalPosition: pos, actualDistance: path.length, path, blockedByBoundary: false };
+}
+
 export function resolveRound(state, { now = Date.now() } = {}) {
   if (state.status !== STATUS.PLAYING) {
     return { state, error: 'Game is not in progress.' };
@@ -559,31 +717,54 @@ export function resolveRound(state, { now = Date.now() } = {}) {
     if (DIRECTIONS.filter((d) => bid[d] > 0).length > 1) s.metrics.splitBidDecisions += 1;
   }
 
-  // 2–5. Totals → cancellation → winning direction → requested distance.
-  const net = calculateNetMovement(bids);
-
-  // 6–7. Move until exhausted or the wall, and record the actual distance.
-  const movement = moveQueen(s, net.direction, net.requestedDistance);
-  s.queenPosition = movement.finalPosition;
-  s.completeQueenPath.push(...movement.path);
-
   /**
    * Snapshot the board as it stood for THIS round: where every bonus sat and
-   * what it was worth before the move resolved. The replay needs this to show
+   * what it was worth before anything resolved. The replay needs this to show
    * the state players were actually reacting to.
    */
   const bonusesAtRoundStart = s.activeBonuses.map((b, seat) =>
-    b ? { seat, position: cell(b.position.r, b.position.c), reward: b.reward } : null
+    b && !b.destroyed ? { seat, position: cell(b.position.r, b.position.c), reward: b.reward } : null
   );
 
-  // 8. Castle landing ends the game immediately.
-  const winnerSeat = checkWinner(s, s.queenPosition);
-
   const events = [];
+
+  // 1b. Cannon fire. Every shot lands before the queen moves.
+  const cannon = fireCannons(s, bids);
+  s = cannon.state;
+  events.push(...cannon.events);
+
+  // 2–5. Totals → cancellation → winning direction → requested distance.
+  const net = calculateNetMovement(bids);
+
+  /**
+   * The last castle standing. Once cannon fire leaves a single castle, the
+   * game has only one possible ending, so it is played out at once: the queen
+   * walks straight to it, with no more bidding. If the last castles fell
+   * together, nobody is left to win.
+   */
+  const standing = standingSeats(s);
+  const finale = (s.eliminatedSeats || []).length > 0 && standing.length <= 1;
+
+  // 6–7. Move until exhausted or the wall, and record the actual distance.
+  const movement = finale
+    ? walkToCastle(s, standing.length ? s.castles[standing[0]] : null)
+    : moveQueen(s, net.direction, net.requestedDistance);
+  s.queenPosition = movement.finalPosition;
+  s.completeQueenPath.push(...movement.path);
+
+  // 8. Castle landing ends the game immediately.
+  const winnerSeat = finale ? (standing.length ? standing[0] : null) : checkWinner(s, s.queenPosition);
+
   let collectedSeats = [];
   let collection = null;
 
-  if (winnerSeat !== null) {
+  if (finale && winnerSeat === null) {
+    s.draw = true;
+    s.status = STATUS.FINISHED;
+    s.phase = PHASES.FINISHED;
+    s.timerDeadline = null;
+    events.push({ type: 'DRAW' });
+  } else if (winnerSeat !== null) {
     s.winner = winnerSeat;
     s.status = STATUS.FINISHED;
     s.phase = PHASES.FINISHED;
@@ -594,7 +775,7 @@ export function resolveRound(state, { now = Date.now() } = {}) {
     //    immediately before collection is resolved (§10.3, §21).
     for (let seat = 0; seat < s.activeBonuses.length; seat++) {
       const bonus = s.activeBonuses[seat];
-      if (bonus && sameCell(bonus.position, s.queenPosition)) {
+      if (bonus && !bonus.destroyed && sameCell(bonus.position, s.queenPosition)) {
         const reward = bonus.reward;
         s.coinAllocationState[seat].coinsRemaining += reward;
         collectedSeats.push(seat);
@@ -656,16 +837,26 @@ export function resolveRound(state, { now = Date.now() } = {}) {
     surviving: net.surviving,
     verticalNet: net.verticalNet,
     horizontalNet: net.horizontalNet,
-    direction: net.direction,
-    requestedDistance: net.requestedDistance,
+    direction: finale ? null : net.direction,
+    requestedDistance: finale ? 0 : net.requestedDistance,
     actualDistance: movement.actualDistance,
     blockedByBoundary: movement.blockedByBoundary,
-    tie: net.tie,
+    tie: finale ? false : net.tie,
     finalPosition: cell(s.queenPosition.r, s.queenPosition.c),
     path: movement.path,
     winner: s.winner,
+    draw: !!s.draw,
+    /**
+     * Public: where the cannonballs landed and which castles fell. Never who
+     * fired — shots are anonymous. Whether a crater hid a treasure is known
+     * only to that treasure's owner, via the private slice below.
+     */
+    explosions: cannon.explosions.map((e) => ({ position: cell(e.position.r, e.position.c), castleSeat: e.castleSeat })),
+    eliminated: cannon.eliminated.slice(),
+    /** The last castle standing: the queen walked to it without a bid. */
+    finale: finale && winnerSeat !== null ? { seat: winnerSeat } : null,
     /** Private slice, filtered per seat by createPlayerView. */
-    _private: { collection },
+    _private: { collection, treasureHits: cannon.treasureHits },
     events,
   };
   s.lastResolution = resolution;
@@ -680,6 +871,8 @@ export function resolveRound(state, { now = Date.now() } = {}) {
     blockedByBoundary: movement.blockedByBoundary,
     bonuses: bonusesAtRoundStart,
     collected: collection ? { seat: collection.seat, position: collection.position, reward: collection.reward } : null,
+    explosions: resolution.explosions.map((e) => ({ ...e })),
+    finale: resolution.finale,
     winner: s.winner,
   });
 

@@ -35,6 +35,7 @@ for (let g = 0; g < games; g++) {
   let rounds = 0;
   while (s.status === 'PLAYING' && rounds < MAX_ROUNDS) {
     for (let seat = 0; seat < 4; seat++) {
+      if (s.lockedSeats.includes(seat)) continue; // fallen to cannon fire
       const bid = decideBid(createPlayerView(s, seat), { rngSeed: `sim-${g}` });
       const r = lockBid(s, seat, bid);
       if (!r.ok) throw new Error(`Illegal AI bid: ${r.error}`);
@@ -81,3 +82,10 @@ console.log(`  no-movement rounds     ${pct(noMove)}`);
 console.log(`  split-bid decisions    ${pct(split)}`);
 console.log(`  bonuses collected/game ${bonuses.toFixed(1)}`);
 console.log(`  coin allocations used  ${allocs.toFixed(1)}`);
+const shots = avg(results.map((r) => r.metrics.shotsFired || 0));
+const castleKills = avg(results.map((r) => r.metrics.castlesDestroyed || 0));
+const treasureKills = avg(results.map((r) => r.metrics.treasuresDestroyed || 0));
+const decidedByCannon = results.filter((r) => (r.metrics.castlesDestroyed || 0) > 0).length;
+console.log(`  cannon shots / game    ${shots.toFixed(1)}`);
+console.log(`  castles destroyed/game ${castleKills.toFixed(2)}  (games with a fall: ${pct(decidedByCannon / games)})`);
+console.log(`  treasures destroyed    ${treasureKills.toFixed(2)} / game`);

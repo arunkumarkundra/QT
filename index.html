@@ -94,6 +94,9 @@
       <div class="bar">
         <span class="brand">QUEEN'S TUG</span>
         <span class="bar-spacer"></span>
+        <!-- Your cannonballs. Drag one onto the board, or tap here then tap a cell. -->
+        <div class="ammo" id="ammo" role="group" aria-label="Cannonballs"></div>
+        <span class="bar-spacer"></span>
         <button class="icon-btn" id="btn-sound" aria-label="Toggle sound"></button>
         <button class="icon-btn" id="btn-help" aria-label="How to play"></button>
         <button class="icon-btn" id="btn-exit" aria-label="Leave game"></button>
@@ -223,21 +226,32 @@
     <p>There is also a secret treasure on your board that only you can see. It holds extra coins, but it loses coins every time the queen moves: the longer you wait, the less it is worth.</p>
     <p>Land exactly on it and you collect whatever is left. Once claimed — or once it reaches zero — a new one appears elsewhere. So every treasure poses the same question: <em>chase the castle, or chase the coins?</em></p>
 
+    <h4>Cannonballs</h4>
+    <p>Each player has <span class="cannon-count">three</span> cannonballs for the whole game and may fire one per round, alongside their coins. Watch where the others keep pulling the queen — they want her there for a reason. When you think you know where a rival's castle or treasure lies, drag a cannonball onto that cell.</p>
+    <p>Cannonballs land before the queen moves. Everyone sees the explosion; nobody learns who fired.</p>
+    <ul>
+      <li><strong>Hit a castle</strong> and it falls. Its owner is out of the game — they can keep watching, but no longer bid, fire or win.</li>
+      <li><strong>Hit a treasure</strong> and it is lost. Only its owner knows. They get a new one only when the old one would have run out anyway.</li>
+      <li><strong>Every cell you strike</strong> stays scorched for the rest of the game. Nothing new is ever placed there.</li>
+    </ul>
+    <p>You cannot fire at your own castle or treasure, at the queen, at the edge of the board, or at an old crater.</p>
+    <p>When only one castle is left standing, the queen goes straight to it and that player wins. If the last castles fall together, nobody does.</p>
+
     <h4>What the others can see</h4>
-    <p>They see the queen, the board, and which way she moved. They see their own castle and their own treasure. They do not see your castle, your bids, your coin balance or your treasure — and you do not see theirs.</p>
+    <p>They see the queen, the board, which way she moved, and every explosion. They see their own castle and their own treasure. They do not see your castle, your bids, your coin balance, your treasure or your cannonballs — and you do not see theirs.</p>
     <p class="aside">You may know where the queen went. You will have to guess why.</p>
 
     <h4>The walls</h4>
     <p>The queen cannot leave the board. If a move asks her to travel farther than the board allows, she stops at the wall and the extra movement is lost.</p>
 
     <h4>Make your move</h4>
-    <p>You have twenty seconds to place coins and lock your bid. If you do not lock in time, whatever you have placed is submitted for you. With no coins, simply pass.</p>
+    <p>You have twenty seconds to place coins, aim a cannonball if you wish, and lock your bid. If you do not lock in time, whatever you have placed — coins and cannonball alike — is submitted for you. With no coins, simply pass.</p>
 
     <h4>If a player leaves</h4>
     <p>If someone disconnects, one of the court's bots takes their seat. The bot knows only what that player could see. When the player returns, their seat can return to them.</p>
 
     <h4>The final reveal</h4>
-    <p>During the game the hidden castles stay hidden. When someone wins, the secrets come out: all four castles, the queen's complete journey, the treasures that appeared, and who reached their castle.</p>
+    <p>During the game the hidden castles stay hidden. When the game ends, the secrets come out: all four castles, the queen's complete journey, the treasures that appeared, and who reached their castle.</p>
     <p class="aside">The queen's journey is the story of the game.</p>
 
     <h4>Controls</h4>
@@ -245,11 +259,13 @@
       <li>Tap a glowing cell to stake a coin toward that direction.</li>
       <li>Tap the opposite cell to take a coin back.</li>
       <li>Long-press or right-click a stack to remove a coin when there is no opposite cell.</li>
+      <li>Drag a cannonball from the top of the screen onto a cell to aim it — or tap the cannonballs, then tap a cell.</li>
+      <li>Tap an aimed cannonball, or drag it off the board, to take it back.</li>
       <li>Tap the queen to lock your bid — with nothing staked, that passes the round.</li>
       <li>Arrow keys stake, Backspace removes, Enter locks.</li>
     </ul>
 
-    <p class="sign-off">Hide your castle. Spend your coins wisely. And pull the queen your way.</p>
+    <p class="sign-off">Hide your castle. Spend your coins wisely. Fire only when you are sure. And pull the queen your way.</p>
   </div>
 </div>
 

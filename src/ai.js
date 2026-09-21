@@ -164,7 +164,65 @@ function interferenceModel(view, dir, personality) {
  * @param {object} view  A PlayerView — the same object a human client receives.
  * @param {object} opts  { rngSeed } for reproducible AI behaviour.
  */
-export function decideBid(view, { rngSeed } = {}) {
+export function decideBid(view, opts = {}) {
+  const bid = decideCoins(view, opts);
+  const shot = decideShot(view, opts);
+  if (shot) bid.shot = shot;
+  return bid;
+}
+
+/**
+ * Cannon fire from public information only — the same view a human has.
+ *
+ * Last round's surviving pull says where the table wanted the queen to go, and
+ * somebody wanted her to go there for a reason: their castle, or their
+ * treasure, probably lies a few cells further along that line. A bot aims a
+ * little past where she stopped, and only fires now and then, so shots stay
+ * rare enough to feel like events. It never fires in the opening rounds,
+ * before there is anything to read.
+ */
+export function decideShot(view, { rngSeed } = {}) {
+  if (view.status !== 'PLAYING' || view.you.eliminated) return null;
+  if (!(view.you.cannonballs > 0)) return null;
+  if (view.roundNumber < 4) return null;
+  const last = view.lastResolution;
+  if (!last || !last.direction || last.actualDistance <= 0) return null;
+
+  const seat = view.you.seat;
+  const rng = standaloneRng(`${rngSeed ?? view.gameId}-${seat}-${view.roundNumber}-cannon`);
+  // Roughly one shot every six rounds or so, a little more eager when the
+  // pull was strong and deliberate.
+  const eagerness = Math.min(0.3, 0.12 + last.actualDistance * 0.02);
+  if (rng.next() > eagerness) return null;
+
+  const m = view.board.boundaryMargin ?? 1;
+  const inner = (p) => p.r >= m && p.c >= m && p.r <= view.board.height - 1 - m && p.c <= view.board.width - 1 - m;
+  const same = (a, b) => a && b && a.r === b.r && a.c === b.c;
+  const blocked = (p) =>
+    !inner(p) ||
+    same(p, view.queenPosition) ||
+    same(p, view.you.castlePosition) ||
+    same(p, view.you.activeBonus?.position) ||
+    (view.craters || []).some((c) => same(c, p));
+
+  const v = VECTORS[last.direction];
+  const from = last.finalPosition;
+  const reach = 1 + Math.floor(rng.next() * 3);
+  // Along the line first, then a cell to either side of it.
+  const side = v.dr === 0 ? { dr: 1, dc: 0 } : { dr: 0, dc: 1 };
+  const candidates = [];
+  for (let k = reach; k <= reach + 2; k++) {
+    const base = { r: from.r + v.dr * k, c: from.c + v.dc * k };
+    candidates.push(base);
+    candidates.push({ r: base.r + side.dr, c: base.c + side.dc });
+    candidates.push({ r: base.r - side.dr, c: base.c - side.dc });
+  }
+  const target = candidates.find((p) => !blocked(p));
+  return target ? { r: target.r, c: target.c } : null;
+}
+
+/** Coins only — where to stake this round. */
+function decideCoins(view, { rngSeed } = {}) {
   const empty = { UP: 0, DOWN: 0, LEFT: 0, RIGHT: 0 };
   const balance = view.you.coinsRemaining;
   if (balance <= 0 || view.status !== 'PLAYING') return empty;

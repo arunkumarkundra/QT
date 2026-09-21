@@ -111,7 +111,12 @@ export function createHost({
           // receives. It has no other route to game information (§13).
           const view = createPlayerView(state, player.seat);
           const bid = decideBid(view, { rngSeed: state.seed });
-          const r = lockBid(state, player.seat, bid);
+          let r = lockBid(state, player.seat, bid);
+          // A shot the rules refuse must never stall the round: keep the coins.
+          if (!r.ok && bid.shot) {
+            const { shot, ...coinsOnly } = bid;
+            r = lockBid(state, player.seat, coinsOnly);
+          }
           if (r.ok) {
             state = r.state;
             emit('seat-locked', { seat: player.seat });
@@ -241,6 +246,7 @@ export function createHost({
           connectionStatus: p.connectionStatus,
           locked: state.lockedSeats.includes(p.seat),
           retired: (state.retiredSeats || []).includes(p.seat),
+          eliminated: (state.eliminatedSeats || []).includes(p.seat),
         })),
       };
     },

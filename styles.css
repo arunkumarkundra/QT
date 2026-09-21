@@ -992,6 +992,213 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--gold-l
   text-align: center;
 }
 
+/* ==========================================================================
+   CANNON FIRE
+   ========================================================================== */
+
+/* --- the rack: your cannonballs, in the top bar --- */
+
+.ammo {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 4px 9px;
+  border-radius: 99px;
+  background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(0,0,0,.34));
+  border: 1px solid var(--line);
+  flex: none;
+  transition: border-color .2s, box-shadow .2s, opacity .2s;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.ammo[hidden] { display: none; }
+.ammo-ball {
+  position: relative;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  border-radius: 50%;
+  transition: transform .15s, opacity .2s;
+}
+.ammo-ball svg { width: 100%; height: 100%; display: block; }
+/* A fired ball leaves an empty socket in the rack. */
+.ammo-ball.spent {
+  width: 20px; height: 20px; margin: 2px;
+  background: radial-gradient(circle at 50% 60%, rgba(0,0,0,.65), rgba(0,0,0,.25));
+  box-shadow: inset 0 1px 3px rgba(0,0,0,.8), 0 0 0 1px rgba(150,178,220,.12);
+}
+/* The ball aimed this round is out on the board, so its slot reads as lifted. */
+.ammo-ball.aimed { opacity: .28; }
+
+.ammo.armed {
+  border-color: color-mix(in srgb, var(--gold) 45%, var(--line));
+  touch-action: none;
+}
+.ammo.armed .ammo-ball.ready { cursor: grab; }
+.ammo.armed .ammo-ball.ready:hover { transform: translateY(-2px) scale(1.08); }
+.ammo.armed:active .ammo-ball.ready { cursor: grabbing; }
+.ammo.aiming {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 1px rgba(217,164,65,.35), 0 0 12px rgba(217,164,65,.4);
+}
+.ammo.aiming .ammo-ball.ready:last-of-type,
+.ammo.aiming .ammo-ball.ready { animation: ammo-ready 1s ease-in-out infinite; }
+@keyframes ammo-ready { 50% { transform: translateY(-2px); } }
+.ammo.fallen { opacity: .35; filter: grayscale(1); }
+
+/* The ball under your finger or pointer while dragging. */
+.drag-ball {
+  position: fixed;
+  left: 0; top: 0;
+  width: 38px; height: 38px;
+  margin: -19px 0 0 -19px;
+  pointer-events: none;
+  z-index: 1000;
+  filter: drop-shadow(0 8px 10px rgba(0,0,0,.7));
+  will-change: transform;
+}
+.drag-ball svg { width: 100%; height: 100%; display: block; }
+
+/* --- aiming on the board --- */
+
+/* Cells a shot can never land on go dark; the rest stay lit. */
+.board.aim-mode .cell:not(.aimable) { background-color: rgba(3, 5, 9, .55); }
+.board.aim-mode .cell.aimable { cursor: crosshair; }
+.board.aim-mode .cell.aimable::before {
+  content: '';
+  position: absolute;
+  inset: 22%;
+  border-radius: 50%;
+  border: 1.5px dashed rgba(247, 221, 160, .22);
+  transition: border-color .12s, inset .12s;
+  pointer-events: none;
+  z-index: 3;
+}
+.board.aim-mode .cell.aimable:hover::before,
+.board.aim-mode .cell.aim-hover::before {
+  inset: 10%;
+  border-color: rgba(247, 221, 160, .95);
+  border-style: solid;
+  box-shadow: 0 0 10px rgba(255, 150, 60, .55), inset 0 0 8px rgba(255, 150, 60, .35);
+}
+/* Coin hints give way while you aim. */
+.board.aim-mode .cell .dir-hint { opacity: .15; }
+
+/* Your aimed ball, sitting in its crosshair. */
+.shot-mark { z-index: 7; }
+.shot-mark svg { position: relative; width: 58%; height: 58%; filter: drop-shadow(0 3px 4px rgba(0,0,0,.8)); }
+.shot-mark .crosshair {
+  position: absolute;
+  inset: 6%;
+  border-radius: 50%;
+  border: 1.5px solid rgba(247, 221, 160, .9);
+  box-shadow: 0 0 8px rgba(255, 150, 60, .5);
+  background:
+    linear-gradient(rgba(247,221,160,.9), rgba(247,221,160,.9)) 50% 0 / 1.5px 18% no-repeat,
+    linear-gradient(rgba(247,221,160,.9), rgba(247,221,160,.9)) 50% 100% / 1.5px 18% no-repeat,
+    linear-gradient(rgba(247,221,160,.9), rgba(247,221,160,.9)) 0 50% / 18% 1.5px no-repeat,
+    linear-gradient(rgba(247,221,160,.9), rgba(247,221,160,.9)) 100% 50% / 18% 1.5px no-repeat;
+  animation: crosshair-turn 6s linear infinite;
+}
+@keyframes crosshair-turn { to { transform: rotate(360deg); } }
+.shot-mark.live { pointer-events: auto; cursor: grab; touch-action: none; }
+.shot-mark.lifted { opacity: .25; }
+.shot-mark:not(.live) .crosshair { animation: none; border-color: var(--gold); }
+
+/* --- impact --- */
+
+.blast-mark { z-index: 9; overflow: visible; }
+.blast-mark svg {
+  position: absolute;
+  width: 260%; height: 260%;
+  animation: blast .95s cubic-bezier(.2, .9, .3, 1) forwards;
+}
+@keyframes blast {
+  0% { transform: scale(.15) rotate(0deg); opacity: 1; }
+  30% { transform: scale(1) rotate(12deg); opacity: 1; }
+  100% { transform: scale(1.25) rotate(20deg); opacity: 0; }
+}
+.blast-mark .shock {
+  position: absolute;
+  width: 100%; height: 100%;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 230, 170, .9);
+  animation: shock .8s ease-out forwards;
+}
+@keyframes shock {
+  from { transform: scale(.3); opacity: 1; border-width: 5px; }
+  to { transform: scale(4.2); opacity: 0; border-width: 1px; }
+}
+
+.board-plate.shake { animation: board-shake .45s ease-out; }
+@keyframes board-shake {
+  0%, 100% { transform: none; }
+  15% { transform: translate(-5px, 3px); }
+  30% { transform: translate(5px, -3px); }
+  45% { transform: translate(-3px, -2px); }
+  60% { transform: translate(3px, 2px); }
+  80% { transform: translate(-1px, 1px); }
+}
+
+/* What a cannonball leaves behind: permanent, and beneath everything else. */
+.crater-mark { z-index: 2; }
+.crater-mark svg { width: 104%; height: 104%; }
+.crater-mark.fresh svg { animation: crater-cool 2.2s ease-out; }
+@keyframes crater-cool {
+  0% { filter: brightness(2.2) drop-shadow(0 0 10px #ff8a2a); }
+  100% { filter: none; }
+}
+
+.ruin-mark { z-index: 4; }
+.ruin-mark svg { width: 88%; height: 88%; filter: saturate(.8) brightness(.95) drop-shadow(0 2px 3px rgba(0,0,0,.9)); }
+.ruin-mark.fresh svg { animation: ruin-fall .7s cubic-bezier(.3, 1.4, .5, 1); }
+@keyframes ruin-fall {
+  0% { transform: translateY(-30%) scale(1.15); opacity: 0; }
+  100% { transform: none; opacity: 1; }
+}
+
+/* Your own treasure, blown away. */
+.bonus-mark.shattered { animation: shatter .6s ease-in forwards; }
+@keyframes shatter {
+  0% { transform: none; opacity: 1; filter: brightness(1.8); }
+  100% { transform: scale(1.5) rotate(18deg); opacity: 0; filter: brightness(.4); }
+}
+
+/* --- a fallen player --- */
+
+.seat-chip.fallen { border-color: #3a404c; box-shadow: none; }
+.seat-chip.fallen .avatar { filter: grayscale(1); opacity: .35; }
+.seat-chip.fallen .lock-badge { display: none; }
+.seat-chip .fallen-mark {
+  position: absolute;
+  inset: 20%;
+  color: color-mix(in srgb, var(--danger) 85%, #fff);
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,.9));
+}
+.seat-chip .fallen-mark svg { width: 100%; height: 100%; display: block; }
+
+/* A player named by colour in a sentence. */
+.seat-dot {
+  display: inline-block;
+  width: .7em; height: .7em;
+  margin: 0 .12em;
+  border-radius: 50%;
+  vertical-align: baseline;
+  background: var(--seat);
+  box-shadow: 0 0 0 2px rgba(0,0,0,.5), 0 0 6px var(--seat);
+}
+
+@media (max-width: 620px) {
+  .ammo { padding: 3px 7px; gap: 2px; }
+  .ammo-ball { width: 20px; height: 20px; }
+  .ammo-ball.spent { width: 16px; height: 16px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shot-mark .crosshair, .ammo.aiming .ammo-ball.ready { animation: none; }
+  .board-plate.shake { animation: none; }
+}
+
 /* Near miss: the queen crossed this castle without stopping on it. */
 .castle-mark.near-miss svg { animation: near-miss 1.1s ease-out 2; }
 @keyframes near-miss {

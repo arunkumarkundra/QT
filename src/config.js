@@ -72,6 +72,13 @@ export const DEFAULT_CONFIG = {
   /** §10.2 — Bonus decays by actual queen movement, clamped at this floor. */
   bonusMinReward: 0,
 
+  /**
+   * Cannonballs each player may fire in a game, at most one per round. A shot
+   * lands before the queen moves: it destroys a castle (that player is out)
+   * or a treasure on the target cell, and leaves a permanent crater.
+   */
+  cannonballsPerPlayer: 3,
+
   /** §3 — No game time limit. §26 forbids introducing one. */
   gameTimeLimitMs: null,
 
