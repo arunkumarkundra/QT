@@ -1494,6 +1494,9 @@ function lockIn() {
  * ------------------------------------------------------------------ */
 
 /** 'three' reads better than '3' in the rules. */
+/** How players are known on screen: by colour, in seat order. */
+const SEAT_COLOR_NAMES = ['Red', 'Green', 'Blue', 'Gold'];
+
 const numberWord = (n) => ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'][n] ?? String(n);
 
 const sameRC = (a, b) => !!a && !!b && a.r === b.r && a.c === b.c;
@@ -2005,26 +2008,21 @@ function showResult() {
     // The last castles fell together. There is no castle left for her to reach.
     line.style.setProperty('--seat', 'var(--muted)');
     $('#winner-avatar').innerHTML = ART.crater();
-    $('#winner-text').textContent = 'No castle stands. A draw.';
+    $('#winner-text').textContent = 'No castle left standing.';
   } else {
     const winnerSeat = reveal.players[seat];
     line.style.setProperty('--seat', SEAT_COLORS[seat]);
     $('#winner-avatar').innerHTML = winnerSeat.controlMode === CONTROL_MODE.HUMAN ? ART.human : ART.bot;
     /**
-     * Every ending says the same thing the game is about: the queen coming to
-     * a castle. The winner's icon sits beside the line, so "their" always has
-     * a face. A game settled by cannon fire says so, because the queen did
-     * not choose that castle — it was the only one left.
+     * One short sentence, naming the winner by the colour everyone has been
+     * looking at all game — their icon, castle and treasure rings. "Won the
+     * queen" holds whether she was lured there or theirs was the last castle
+     * standing; the stats line below says which.
      */
-    const lastStanding = !!reveal.roundLog?.at(-1)?.finale;
-    $('#winner-text').textContent =
+    $('#winner-text').innerHTML =
       seat === app.seat
-        ? lastStanding
-          ? 'Yours is the last castle standing. You win!'
-          : 'The queen has come to your castle. You win!'
-        : lastStanding
-        ? 'Theirs is the last castle standing.'
-        : 'The queen has come to their castle.';
+        ? 'You win the queen!'
+        : `<span class="who">${SEAT_COLOR_NAMES[seat]}</span> wins the queen.`;
   }
 
   // Stats live in the bottom message strip, not in a panel of their own.
@@ -2034,7 +2032,8 @@ function showResult() {
     `<span class="stat"><b>${reveal.roundsPlayed}</b> rounds</span>` +
     `<span class="stat"><b>${reveal.completeQueenPath.length - 1}</b> cells travelled</span>` +
     `<span class="stat"><b>${claimed}</b> treasure claimed</span>` +
-    (craters ? `<span class="stat"><b>${craters}</b> cannonball${craters === 1 ? '' : 's'} landed</span>` : '');
+    (craters ? `<span class="stat"><b>${craters}</b> cannonball${craters === 1 ? '' : 's'} landed</span>` : '') +
+    (reveal.roundLog?.at(-1)?.finale ? '<span class="stat">last castle standing</span>' : '');
 
   buildGrid($('#replay-cells'), $('#replay-board'), reveal.board.width, reveal.board.height, null);
   $('#replay-overlay').innerHTML = '';

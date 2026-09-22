@@ -1253,6 +1253,7 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--gold-l
 .winner-line .avatar { width: 44px; height: 44px; color: var(--seat); flex: none; }
 .winner-line .avatar svg { width: 100%; height: 100%; }
 .winner-line h2 { font-size: clamp(20px, 5vw, 29px); color: var(--gold-lt); letter-spacing: .04em; }
+.winner-line h2 .who { color: var(--seat); text-shadow: 0 0 14px color-mix(in srgb, var(--seat) 45%, transparent); }
 
 .result-stats {
   flex: none;
