@@ -99,6 +99,16 @@ html = html
     () => `<script>\n(function(){\n"use strict";\n${bundled}\n})();\n</script>`
   );
 
+/**
+ * The offline bundle carries no analytics. It promises zero outside
+ * connections, and a downloaded copy opened on someone's own machine is not a
+ * visit to the website. Everything between the two markers is removed.
+ */
+html = html.replace(/<!-- Cloudflare Web Analytics -->[\s\S]*?<!-- End Cloudflare Web Analytics -->\n?/, '');
+if (html.includes('cloudflareinsights')) {
+  throw new Error('The analytics snippet leaked into the offline bundle.');
+}
+
 if (html.includes('type="module"')) {
   throw new Error('Bundle still references a module script — the inline step did not fire.');
 }
