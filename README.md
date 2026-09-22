@@ -1,277 +1,267 @@
-# Waypoint
+# QUEEN'S TUG
 
-**[waypoint.holiday](https://waypoint.holiday)** — your next trip, figured out.
+**Four hidden castles. One wandering queen. Every move is a secret battle.**
 
-Most travel sites ask where you want to go. Waypoint asks when you are free.
-It reads the public holiday calendar for where you live, works out which
-breaks you could actually take and how much leave each would cost, then
-suggests destinations that fit the time, the season, the budget and the
-kind of trip you want.
-
-A full explanation of the method is at
-[waypoint.holiday/how-it-works.html](https://waypoint.holiday/how-it-works.html).
+An implementation of the authoritative game specification. Four players, a 12×12
+board, secret simultaneous coin bidding, and a queen nobody controls alone.
 
 ---
 
-## How it is put together
+## Run it
 
-One Cloudflare Worker, named `waypoint`, serves both halves from the same
-address, and is deployed automatically from this repository.
+**Fastest way:** open `dist/queens-tug.html` in any browser. It is one file with
+no dependencies, no build step and no server — the stylesheet, all seven modules
+and the key art are inlined.
 
-| Piece | Address | What it is |
-|---|---|---|
-| **The site** | `waypoint.holiday/…` | Static files. No build step, no framework, no bundler. |
-| **The API** | `waypoint.holiday/api/…` | `worker.js`. |
+**Development / GitHub Pages:**
 
-Existing files are served straight from Cloudflare's static asset store and
-never run any code, so page views do not count towards the Workers daily
-request limit. Only `/api/` requests (and requests for files that do not
-exist) run `worker.js`.
+```bash
+npm run serve          # http://localhost:8080
+```
 
-There is no build. What is in this repository is what is served. That is
-deliberate: it means a change can be made and shipped from the GitHub web
-editor, and there is no toolchain to rot.
+`index.html` loads `src/*.js` as ES modules, so it needs to be served over HTTP
+rather than opened from the filesystem. Push the repository root to a GitHub
+Pages branch and it works as-is; no build step is required for Pages, because
+`index.html` is already the deployable artifact.
 
-The browser never talks to a third-party API for anything essential. The
-Worker sits in front, caches aggressively, and holds every credential.
+**Tests and tooling:**
 
----
-
-## What is in the repository
-
-### The site
-
-| File | What it does |
-|---|---|
-| `index.html` | The entire application — markup, styles and shell logic in one file |
-| `waypoint-engine.js` | The decision engine: scoring, ranking, simulation |
-| `waypoint-data.js` | The atlas: 490 destinations across 130 countries, plus the climate model |
-| `waypoint-config.js` | Tunable constants and scoring weights |
-| `waypoint-climate.js` | Climate normals |
-| `waypoint-costs.js`, `waypoint-prices.js` | Cost-of-living and price reference data |
-| `waypoint-holidays.js` | Public holiday logic, including regional calendars |
-| `waypoint-festivals.js` | Festivals and events |
-| `waypoint-notes.js` | Written destination notes |
-| `waypoint-popularity.js` | Popularity signals |
-| `waypoint-photos.js` | Photo manifests and credits |
-| `waypoint-airports.js` | Airports and route networks |
-| `waypoint-heritage.js` | UNESCO and heritage listings |
-| `waypoint-reputation.js` | Reputation signals |
-| `waypoint-nearby.js` | Nearby-place logic |
-| `waypoint-pdf.js`, `waypoint-pdf-bridge.js` | PDF export |
-| `hero-images.json` | The rotating homepage photograph |
-
-### Standalone pages
-
-| File | What it is |
-|---|---|
-| `how-it-works.html` | The method, explained in public |
-| `privacy.html` | Privacy policy |
-| `terms.html` | Terms of use |
-| `contact.html` | Contact, with the address assembled in the browser so crawlers cannot harvest it |
-| `404.html` | Not-found page |
-| `sources.html` | Data and sources, in detail |
-| `legal.css` | Shared styling for all of the above |
-
-### The API
-
-`worker.js` — the Worker. Not published as a file (see `.assetsignore`). Endpoints:
-
-| Endpoint | Cost | What it does |
-|---|---|---|
-| `/api/health` | free | Liveness check |
-| `/api/where` | free | Approximate location from Cloudflare's own geolocation |
-| `/api/holidays` | free | Public holidays, cached |
-| `/api/climate` | free | Climate normals and forecast |
-| `/api/fx`, `/api/prices` | free | Exchange rates and cost reference |
-| `/api/nearby`, `/api/geocode`, `/api/fares` | free | Places, geocoding, fare estimates |
-| `/api/photo` | free | Photo lookup with credit |
-| `/api/live` | free | Air quality, hazards, advisories |
-| `/api/ready-link` | free | Outbound partner link router |
-| `/api/brief` | **metered** | AI destination briefing |
-| `/api/parse` | **metered** | AI parsing of free-text input |
-
-Only the last two use AI, and both are rate-limited: a few calls a minute
-per visitor (Cloudflare's rate limiter), a daily cap per visitor (KV), and
-a soft daily ceiling for the whole site. On the Workers Free plan, Workers
-AI stops at its free daily allowance and cannot bill. If
-`ANTHROPIC_API_KEY` is ever set, also set a monthly spend limit in the
-Anthropic console.
-
-### Internal tools
-
-These are deployed but deliberately kept out of search results by an
-`X-Robots-Tag` header set in `_headers`. They are workbenches for
-maintaining the data, not part of the product.
-
-`atlas-studio.html`, `photo-studio.html`, `score.html`, `coverage.html`,
-`build-airports.html`, `build-costs.html`, `build-popularity.html`,
-`tools/build-climate.html`, `annotator/`, `golden/`
-
-### Configuration
-
-| File | What it controls |
-|---|---|
-| `wrangler.jsonc` | The Cloudflare Worker: name, domains, bindings (AI, KV, rate limiter), and how files and `/api/` are routed |
-| `_headers` | Security headers, cache headers, and the noindex rules for the tools above |
-| `.assetsignore` | Files in this repository that must **not** be published (the Worker source, config, scripts, `.git`). **Add any new private file here.** |
-| `robots.txt` | Crawler policy. AI training crawlers are currently allowed; there is a commented-out block to refuse them |
-| `sitemap.xml` | The public pages, written without `.html`. **Add an entry here whenever a new public page is created.** |
-| `site.webmanifest` | Install metadata, icons and screenshots |
+```bash
+npm install            # jsdom, for the UI tests only
+npm test               # all three suites — 132 assertions
+npm run test:rules     # the §23 rule suite alone, zero dependencies
+npm run simulate 200   # headless AI games, reports the §27 metrics
+npm run build          # regenerate dist/queens-tug.html from src/
+```
 
 ---
 
-## Deploying
+## Playing
 
-Push to `main`. Cloudflare Workers Builds deploys the site and the API
-together, usually within a minute. Progress and errors are under
-Workers & Pages → `waypoint` → Deployments.
+You are one of four players. Only you can see your castle. Each round, tap the
+glowing cells beside the queen to drop coins on them. Everyone does this in
+secret at the same time.
 
-Do **not** edit `worker.js` in the Cloudflare dashboard editor. The next
-push to `main` replaces whatever was pasted there.
+Opposite directions cancel. The strongest survivor drags the queen that many
+cells, stopping at the wall. Win by making her **finish** a move on your castle.
 
-### Addresses and pages
+**The board is the controller.** There is no bidding panel. Tapping a cell adds
+one coin; tapping the *opposite* cell takes one back off the pile. When the
+queen stands against a wall there is no opposite cell, so a **long-press (or
+right-click) on a stack** removes a coin too. **Tap the queen herself to lock
+in** — with nothing staked, that is how you pass. Arrow keys stake, Backspace
+undoes, Enter locks.
 
-Pages are served at short addresses: `/how-it-works`, not
-`/how-it-works.html`. The `.html` form still works; it redirects. A file
-that does not exist gets `404.html` with a real 404 status. These are set
-by `html_handling` and `not_found_handling` in `wrangler.jsonc`.
+**Tuning lives in `src/config.js`**, not in a settings screen: `startingCoins`,
+`replenishCoins`, `bonusStartReward`, `decisionTimerMs`, `boardWidth/Height`.
 
-### Test addresses
+**URL parameters.** `?game=QT-XXXXXX` loads a specific board. `?turbo=0.3`
+speeds up animation and AI pacing for fast playtesting — presentation only, it
+cannot change an outcome.
 
-`waypoint.arunkumarkundra.workers.dev` always serves the latest deploy.
-Each deploy also gets its own preview address, listed under Deployments.
-Both are kept out of search engines by `_headers`.
+**Sound and music** are synthesised with WebAudio at runtime — no audio files
+ship at all. The title theme is a short processional in D minor, written out as
+note data in `src/sound.js` (`THEME_MELODY`, `THEME_BASS`, `THEME_CHIME`) and
+built from the same bell voice as the game sounds, so edits are a matter of
+changing numbers. The speaker button mutes everything and the choice is
+remembered.
 
----
+## Architecture
 
-## Worker settings
+```
+AuthoritativeGameState        (host.js — inside a closure, unreachable)
+        │
+        │  createPlayerView(seat)     ← the only exit
+        ▼
+   PlayerView(seat)
+        │
+   ┌────┴────┐
+   ▼         ▼
+Human UI    AI
+```
 
-Set these in the Cloudflare dashboard under
-Workers & Pages → `waypoint` → Settings → Variables and Secrets.
-Use that screen, not "Build variables", which the running Worker cannot
-see. Deploys from GitHub leave these untouched.
-None are required; each one switches on a capability when present.
+| File | Responsibility |
+| --- | --- |
+| `src/config.js` | Every tunable constant. Nothing else hard-codes a rule value. |
+| `src/rng.js` | Seeded RNG whose cursor lives *inside* game state, so games replay exactly. |
+| `src/engine.js` | Pure rules. No DOM, no network, no timers, no I/O. |
+| `src/playerView.js` | The information boundary. Builds up permitted fields; never deletes from a copy. |
+| `src/ai.js` | Computer player. Its only game input is a PlayerView. |
+| `src/sound.js` | WebAudio synthesis. No audio files. |
+| `src/multiplayer.js` | Peer-to-peer transport. The only file that knows a network exists. |
+| `src/host.js` | The authoritative "server". Owns state, runs the clock, accepts intent only. |
+| `src/ui.js` | Renders views, collects input. Contains no rules. |
 
-| Name | Effect if set |
-|---|---|
-| `RATE_SALT` | **Recommended.** Salts the one-way fingerprint used by the rate limiter, so the stored values cannot be reversed back to IP addresses. |
-| `FIRMS_MAP_KEY` | NASA FIRMS wildfire data in `/api/live` |
-| `TRAVELPAYOUTS_TOKEN` | Cached fare estimates in `/api/fares` |
-| `ANTHROPIC_API_KEY` | Uses Claude for destination briefings instead of Workers AI. Better output, a fraction of a cent each. |
-| `SKYSCANNER_MEDIA_PARTNER_ID`, `SKYSCANNER_SUBID2` | Skyscanner attribution |
-| `BOOKING_AID`, `BOOKING_LABEL` | Booking.com attribution |
-| `VIATOR_PID`, `VIATOR_MCID`, `VIATOR_CAMPAIGN` | Viator attribution |
-| `DISCOVER_CARS_AFFILIATE_URL` | URL template; `{destination}` is substituted |
-| `TOURRADAR_DEEPLINK`, `AIRALO_DEEPLINK`, `ROME2RIO_DEEPLINK`, `KAYAK_DEEPLINK`, `WISE_DEEPLINK` | URL templates containing `{url}` |
+The UI never holds another player's data, because it is never sent one. Grep
+`src/ui.js` for `castles`, `activeBonuses` or `currentRoundBids` — there are no
+hits. The browser cannot display what it does not have.
 
-### Network links for Skyscanner, Booking.com and Viator
-
-These three take their own native IDs above. If one is joined through a
-network such as Travelpayouts instead, paste the network's `{url}` template
-into `SKYSCANNER_DEEPLINK`, `BOOKING_DEEPLINK` or `VIATOR_DEEPLINK`. The
-native ID always wins: the template is used only when that partner's own
-ID is not set, so a link never carries two sets of tracking.
-
-### Regional routing
-
-Some links go to a different partner depending on where the trip is — the
-reasoning is in the Partner Routing Study. Every regional route is tried
-first and falls back to the default partner on its own if it cannot
-produce a link, so none of these variables is needed for the site to work.
-
-| Variable | Effect |
-|---|---|
-| `ROUTING_OFF` | `true` switches every regional route off. All links go to their default partner |
-| `ROUTING_SKIP` | Comma list of partners to switch off, e.g. `tripcom` or `tripcom,wise` |
-| `TRIPCOM_DEEPLINK` | Affiliate template for Trip.com, same `{url}` / `{subid}` shape as the others |
-
-Both switches take effect on the next click, with no deploy. `/api/health`
-shows what is on under `routing`, and names any affiliate template it is
-ignoring under `affiliates.problems`.
-
-A template is ignored — and the traveller sent to the partner untracked —
-if it does not start with `https://` or does not contain `{url}`. A pasting
-mistake in the dashboard costs a commission, never a working link.
-
-Trip.com hotel routing covers only mainland Chinese cities whose Trip.com
-city ID has been confirmed by hand; the table and the one-line procedure
-for adding a city are at `TRIPCOM_CITY` in `worker.js`.
-
-### Reporting tags
-
-Every template above may also contain `{subid}`, and `BOOKING_LABEL` and
-`VIATOR_CAMPAIGN` may contain it too. The Worker replaces it with a short
-description of the trip — the kind of link, the destination country, its
-airport code, and the month of travel, for example `hotel-lk-cmb-202611`.
-
-This is what turns a commission statement from one number into a report
-that says which categories and which destinations earn. Set it once and
-the data accumulates from the first click; without it, choosing partners
-later is guesswork.
-
-A typical Travelpayouts template looks like:
-
-    https://tp.media/r?marker=123456&u={url}&sub_id={subid}
-
-A template with no `{subid}` in it is sent exactly as written, so nothing
-changes for a variable that was set before this existed.
-
-The tag describes the trip and never the traveller. It carries no
-passport, no party size, no origin, no session identifier and no random
-number — nothing that could link two clicks to one person. `contextTag()`
-in `worker.js` is the only place it is built, and the privacy policy
-states this in as many words. Anything added to it later must keep that
-promise.
-
-The bindings — Workers AI (`AI`), the KV namespace (`RATE`), the rate
-limiter (`BURST`) and the static files (`ASSETS`) — are declared in
-`wrangler.jsonc`, not in the dashboard. A binding added in the dashboard is
-removed by the next deploy.
-
-The free plan allows 1,000 KV writes a day across the account. The Worker
-uses one per AI call and one per uncached fare lookup, and carries on
-safely if the allowance runs out.
-
-### Who may call the API
-
-The site calls the API on its own address, which is always allowed.
-`worker.js` also holds an allowlist near the top for pages served from
-anywhere else; a browser request from an origin that is neither gets a
-403. Cloudflare's test and preview addresses for this Worker are matched
-by a pattern anchored to this account, so previews work without editing
-anything.
+**The client submits intent, never outcome.** There is deliberately no
+`host.moveQueen()`, no `setQueenPosition()`, no `declareWinner()`. A tampered
+client can send a malformed bid and get it rejected; it cannot send `"move Right
+8"`, because no such message exists.
 
 ---
 
-## Data and attribution
+## Tests
 
-The atlas is precomputed and shipped with the app rather than assembled at
-request time, so a slow or rate-limited third party cannot ruin a search.
-Live sources refine the answer instead of being required for it.
+132 assertions across three suites. The rule suite has zero dependencies and
+covers every bullet in §23, each tagged with its spec section.
 
-Waypoint uses openly licensed material from Wikipedia, Wikivoyage,
-Wikidata, Wikimedia Commons and OpenStreetMap, alongside public climate,
-air quality, hazard, exchange rate, holiday, airport and heritage data.
-Full credits are at the foot of the homepage and on `sources.html`.
+| Suite | Covers |
+| --- | --- |
+| `tests/engine.test.js` | 77 rule tests — placement, bidding, cancellation, boundary stopping, castles, bonus decay/collection/replacement, coin economy, the information boundary, determinism, the reveal. |
+| `tests/host.test.js` | 13 tests that the host behaves like a server: filtered reads, rejected outcomes, refused reveals, takeover reporting. |
+| `tests/ui.test.js` | 41 tests booting the built file in jsdom and playing a full game through the real DOM. |
 
-Those materials belong to their owners and are used under their own
-licences. See `LICENSE`.
-
----
-
-## Licence
-
-Proprietary. Copyright © 2026 Prisha iCube. All rights reserved.
-See [`LICENSE`](LICENSE).
-
-Third-party material included in this repository remains under its own
-licence and is not covered by that copyright claim.
+The UI tests check the *built* file, so a broken bundle fails the suite rather
+than shipping.
 
 ---
 
-## Contact
+## Two findings worth your attention
 
-[waypoint.holiday/contact.html](https://waypoint.holiday/contact.html)
+### 1. The specification permits a permanent stalemate
 
-Reports of factual errors are the most useful messages we get.
+§11 replenishes coins only when **all four** players are exhausted. §26 forbids
+a game time limit. Together these allow a deadlock that no rule in the document
+can break: if three players are at zero and the fourth simply declines to bid,
+nothing can ever change again. Headless simulation hit this in **20% of games**
+before it was addressed.
+
+Two responses, both deliberate:
+
+- **The AI no longer causes it.** A seat holding coins while the table spends
+  nothing has *uncontested* moves available, which is a winning position, not a
+  reason to stall. The AI now reads the public aggregate totals (§5.1 makes them
+  public, so this is legitimate inference) and presses the advantage. Completion
+  went from 80% to **100% of 200 games**.
+- **The rule is unchanged by default.** `config.stalemateReplenishRounds` is
+  `null` — spec-exact. Set it to `3` to replenish everyone after three
+  consecutive rounds in which nobody spends. It is exposed in the lobby as an
+  explicitly-labelled deviation, off by default, and `tests/engine.test.js`
+  contains a test that *asserts the deadlock exists* under default settings so
+  the gap cannot regress silently.
+
+Four human players can still reach this state. It is worth a rules decision
+before public playtesting.
+
+### 2. The AI was overbidding, and it broke the feel of the game
+
+Early builds sent the queen skidding wall to wall: **6.9 cells per round and a
+boundary slam in 45% of rounds**. Three compounding causes:
+
+- Same-direction bids **stack**. Four seats capped at 20 coins each could put 40+
+  behind one direction. The AI modelled rivals only as opposition, never as
+  accidental allies overshooting its target.
+- Nothing punished hitting the wall, so wasted steps were free.
+- Expecting heavy opposition was self-fulfilling: everyone bid big because
+  everyone expected big bids.
+
+Fixed by capping a single seat's stake to a few coins, widening the "ally" tail
+of the interference model, and penalising leaving the queen on the boundary
+(no castle can sit there anyway). Now **4.7 cells per round and 8% wall slams**,
+with 60% of moves in the 0–3 cell range where the tug-of-war is readable.
+
+This also revived the treasure system. Stacks decay by distance travelled, so at
+seven cells a round they died before anyone could reach one. Collections per game
+roughly doubled, and moving to a single 50-coin starting value (rather than a
+10/20/30 band) gives every stack a life worth chasing.
+
+---
+
+## Playtest baseline
+
+200 AI-vs-AI games, 12×12, 100 coins:
+
+| Metric | Value |
+| --- | --- |
+| Games completed | 200 / 200 |
+| Rounds, mean / median | 24.0 / 21 |
+| Cells moved per round | 4.7 |
+| Wall slams per round | 8.0% |
+| Coins per bid | 2.0 |
+| No-movement rounds | 12.6% |
+| Split-bid decisions | 11.6% |
+| Bonuses collected per game | 0.8 |
+
+Reproduce with `npm run simulate 200`. Vary with `--coins=50`, `--board=10`.
+These are computer players, not humans — treat them as a floor for how the
+system behaves, not a prediction of how it feels. §27's remaining questions
+(whether decisions are fun, whether players understand *why* the queen moved)
+need real people.
+
+---
+
+## Multiplayer
+
+Real online play works, with no server and no hosting bill.
+
+GitHub Pages cannot run a backend, but WebRTC only needs a *signalling* channel
+to introduce two browsers to each other. [Trystero](https://github.com/dmotz/trystero)
+provides that over public relays; after the handshake, players are connected
+directly. The library is loaded lazily from a CDN, so solo play never pays for
+it and the game still opens if the CDN is unreachable.
+
+**The topology is host-authoritative**, which is why almost no game code
+changed:
+
+```
+Creator's browser                       Joiner's browser
+┌────────────────────┐   PlayerView     ┌──────────────────┐
+│ createHost()       ├─────────────────►│ remote proxy     │
+│ authoritative state│                  │ one view, no more│
+│                    │◄─────────────────┤                  │
+└────────────────────┘   bid intent     └──────────────────┘
+```
+
+The creator runs the real engine. Everyone else holds nothing but the
+PlayerView the host chose to send them — `src/multiplayer.js` calls
+`host.getView(seat)` per peer and sends each result to exactly one connection.
+This is the §14.1 boundary enforced across a network: a joiner's machine never
+receives another player's castle, treasure, balance or bid, so a tampered
+client has nothing to reveal. Peers can only send intents (`stake one coin
+left`, `lock`); no message exists that moves the queen, so a hostile peer
+cannot fabricate an outcome.
+
+Disconnects reuse the takeover rule already in the engine: a vanished peer's
+seat flips to computer control immediately so the round can still resolve, and
+the other players are told.
+
+**How to play together:** the start screen *is* the lobby. It opens with a game
+code already live, so you just share the code or link. Others open the link (or
+enter the code) and their icon replaces a computer player in the seat row. Any
+seat still empty at kick-off is played by the computer, so you never have to
+wait for a full table. The host presses Start.
+
+**Diagnosing a failed connection.** The lobby reports which stage it reached,
+so the message tells you where it broke:
+
+| Message | Meaning |
+| --- | --- |
+| `Finding your game…` | Still loading the signalling library from a CDN. |
+| `Connected. Looking for the host…` | Relay reached; waiting for the host to answer. |
+| `You're in. Waiting for the host…` | Seated successfully. |
+| `Online play is unavailable…` | No relay could be reached at all. |
+| `Game not found…` | Relay fine, but nobody answered on that code within 20 seconds. |
+
+Seating is driven by an explicit greeting from the joiner rather than by
+connection events, and the host re-broadcasts the lobby every two seconds, so a
+peer that connects during a hiccup still gets seated.
+
+**Caveat worth knowing:** peer-to-peer connectivity cannot be exercised in the
+environment this was built in — the sandbox has no outbound WebRTC. Symmetric
+NATs may need a TURN server. `TRYSTERO_URLS` in `src/multiplayer.js` lists the
+relays and strategies tried, in order.
+
+## What is not built
+
+
+**A dedicated relay.** Signalling currently rides public Nostr relays. That is
+fine for launch and costs nothing, but a busy game would want its own signalling
+server and a TURN fallback for restrictive networks. `TRANSPORT.md` sketches
+what that looks like; the game code would not change, because the transport is
+already isolated behind `src/multiplayer.js`.
+
+**Spectators and reconnection into a running game.** A dropped player's seat is
+covered by the computer, but they cannot currently take it back mid-game.
